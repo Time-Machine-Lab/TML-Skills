@@ -1,0 +1,10 @@
+# IDEs and Editors
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Trae-specific
+# Assuming .trae/skills/ is where the user develops skills, we might want to keep it.
+# But usually local user config inside .trae might be ignored.
+# For now, only ignoring .idea as requested.
