@@ -1,0 +1,44 @@
+﻿{
+  "normal": {
+    "title_templates": [
+      "{fire} {product_name} 自用闲置转",
+      "{star} {product_name} 成色好，价格友好"
+    ],
+    "body_template": "{title}\n\n【商品信息】\n- 商品：{product_name}\n- 成色：{condition}\n- 售价：{price}\n- 原价：{original_price}\n\n【核心亮点】\n{highlights}\n\n【转手原因】\n{reason}\n\n【瑕疵说明】\n{defects}\n\n【配件与发货】\n- 配件：{accessories}\n- 发货：{delivery}\n- 邮费：{shipping}\n- 地区：{location}\n\n【交易说明】\n{warranty}\n{ref_price_line}\n\n想看细节图可私聊，支持小刀，爽快优先。\n\n{tags}"
+  },
+  "trust": {
+    "title_templates": [
+      "{verify} {product_name} 真实描述可验货",
+      "{check} {product_name} 细节透明，放心拍"
+    ],
+    "body_template": "{title}\n\n【真实说明】\n- 我承诺实拍实述，不虚标成色。\n- 商品：{product_name}，成色：{condition}，售价：{price}。\n\n【你最关心的点】\n{highlights}\n\n【细节补充】\n- 瑕疵：{defects}\n- 配件：{accessories}\n- 转手原因：{reason}\n\n【交易安全】\n- {delivery}\n- {shipping}\n- {warranty}\n{ref_price_line}\n\n可先沟通再拍，双方体验更好。\n\n{tags}"
+  },
+  "concise": {
+    "title_templates": [
+      "{lightning} {product_name} 可秒发",
+      "{cool} {product_name} 一口价直出"
+    ],
+    "body_template": "{title}\n\n商品：{product_name}\n成色：{condition}\n价格：{price}（原价 {original_price}）\n亮点：{highlights}\n转手原因：{reason}\n发货：{delivery} / {shipping}\n地区：{location}\n备注：{notes}\n{digital_notice}\n\n有意直接私聊，信息齐全可秒回。\n\n{tags}"
+  },
+  "professional": {
+    "title_templates": [
+      "{diamond} {product_name} 参数完整，支持验货",
+      "{verify} {product_name} 品质转让"
+    ],
+    "body_template": "{title}\n\n【参数与状态】\n- 商品：{product_name}\n- 成色等级：{condition}\n- 售价：{price}\n- 原价：{original_price}\n\n【功能与卖点】\n{highlights}\n\n【质检与瑕疵】\n{defects}\n\n【配套与服务】\n- 配件：{accessories}\n- 发货：{delivery}\n- 邮费：{shipping}\n- 售后：{warranty}\n{digital_notice}\n{ref_price_line}\n\n欢迎懂行买家沟通，细节图和视频可补充。\n\n{tags}"
+  },
+  "emotional": {
+    "title_templates": [
+      "{heart} {product_name} 忍痛转给有缘人",
+      "{heart} {product_name} 自用好物，诚心出"
+    ],
+    "body_template": "{title}\n\n这件 {product_name} 陪了我一段时间，状态一直维护得不错。\n\n【为什么转】\n{reason}\n\n【它的优点】\n{highlights}\n\n【成色与细节】\n- 成色：{condition}\n- 瑕疵：{defects}\n- 配件：{accessories}\n\n【交易方式】\n{delivery}，{shipping}，{location}。\n{warranty}\n\n希望遇到认真使用它的人。\n\n{tags}"
+  },
+  "urgent": {
+    "title_templates": [
+      "{warning} {product_name} 急出，价格可聊",
+      "{lightning} {product_name} 着急转，爽快优先"
+    ],
+    "body_template": "{title}\n\n着急腾空间，诚心转。\n\n【商品】{product_name}\n【成色】{condition}\n【价格】{price}（可小刀）\n【亮点】{highlights}\n【原因】{reason}\n【瑕疵】{defects}\n【发货】{delivery} / {shipping}\n【地区】{location}\n\n{digital_notice}\n有意直接私聊，能快速确认的优先。\n\n{tags}"
+  }
+}
