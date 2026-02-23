@@ -11,6 +11,7 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 import image_prompt_gen
 import search_references
 import text_formatter
+import xianyu_live_search
 
 
 CATEGORY_KEYWORDS = {
@@ -309,6 +310,21 @@ def render_variation(
     return {"style": style_key, "title": title, "body": body}
 
 
+def merge_references(local_refs: List[Dict], live_refs: List[Dict], max_refs: int) -> List[Dict]:
+    merged: List[Dict] = []
+    seen_titles = set()
+
+    for item in (local_refs or []) + (live_refs or []):
+        title = (item or {}).get("title", "").strip()
+        if not title or title in seen_titles:
+            continue
+        seen_titles.add(title)
+        merged.append(item)
+        if len(merged) >= max(1, max_refs):
+            break
+    return merged
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Generate high-quality Xianyu post content")
     parser.add_argument("input_data", help="Listing text or path to a text file")
@@ -316,6 +332,9 @@ def main() -> None:
     parser.add_argument("--style", default="auto", help="Style key from assets/styles.json or auto")
     parser.add_argument("--max-references", type=int, default=3)
     parser.add_argument("--max-variants", type=int, default=2)
+    parser.add_argument("--live-search", action="store_true", help="Enable live search from Xianyu web")
+    parser.add_argument("--live-limit", type=int, default=3, help="Max live posts to include")
+    parser.add_argument("--live-timeout-sec", type=int, default=10, help="HTTP timeout for live search")
     args = parser.parse_args()
 
     base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -338,12 +357,28 @@ def main() -> None:
     if fields.get("highlights"):
         keywords.extend(fields["highlights"].split("；")[:2])
 
-    refs = search_references.search_references(
+    local_refs = search_references.search_references(
         keywords=keywords,
         category=category,
         condition=condition_key,
         price=parse_price(fields.get("price", "")),
         limit=max(1, args.max_references),
+    )
+
+    live_search_info = {"keywords": [], "search_urls": [], "posts": [], "error": ""}
+    if args.live_search:
+        live_search_info = xianyu_live_search.search_recent_posts(
+            raw_text=fields.get("source_text", ""),
+            product_name=fields.get("product_name", ""),
+            limit=max(1, args.live_limit),
+            timeout_sec=max(3, args.live_timeout_sec),
+        )
+
+    merged_limit = max(1, args.max_references) + (max(1, args.live_limit) if args.live_search else 0)
+    refs = merge_references(
+        local_refs=local_refs,
+        live_refs=live_search_info.get("posts", []),
+        max_refs=merged_limit,
     )
 
     visual_style = "real-shot"
@@ -386,6 +421,14 @@ def main() -> None:
         "condition_zh": CONDITION_ZH.get(condition_key, "二手"),
         "price": fields.get("price", ""),
         "references": refs,
+        "local_references": local_refs,
+        "live_references": live_search_info.get("posts", []),
+        "live_search": {
+            "enabled": bool(args.live_search),
+            "keywords": live_search_info.get("keywords", []),
+            "search_urls": live_search_info.get("search_urls", []),
+            "error": live_search_info.get("error", ""),
+        },
         "image_prompt": image_prompt,
         "suggested_visual_style": visual_style,
         "variations": variations,
@@ -408,6 +451,14 @@ def main() -> None:
         for idx, ref in enumerate(refs, 1):
             price_label = ref.get("price_text") or (f"¥{ref.get('price')}" if ref.get("price") else "N/A")
             print(f"{idx}. {ref.get('title')} | 价格: {price_label} | 想要: {ref.get('want_count')}")
+
+    if args.live_search:
+        print("\n[实时搜索]")
+        print(f"关键词: {', '.join(result['live_search'].get('keywords', [])) or 'N/A'}")
+        if result["live_search"].get("error"):
+            print(f"错误: {result['live_search']['error']}")
+        for u in result["live_search"].get("search_urls", []):
+            print(f"- {u}")
 
     print("\n[封面图 Prompt]")
     print(image_prompt)

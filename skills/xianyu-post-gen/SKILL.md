@@ -40,6 +40,12 @@ python skills/xianyu-post-gen/scripts/generate_post.py "<商品信息文本>" --
 - `--style normal|trust|concise|professional|emotional|urgent|auto`
 - `--max-references 3`
 - `--max-variants 2`
+- `--live-search`（开启实时检索闲鱼最近相关帖子）
+- `--live-limit 3`
+- `--live-timeout-sec 10`
+
+说明：
+- 若实时检索被风控或超时，脚本会返回关键词和搜索链接，Agent 可让用户手动打开链接补充最近帖子内容。
 
 如果 `references/` 新增了预处理数据，先更新参考库：
 
@@ -56,9 +62,10 @@ powershell -NoProfile -ExecutionPolicy Bypass -File skills/xianyu-post-gen/scrip
 
 按这个顺序输出：
 1. `参考价与竞品要点`（来自 `references`）
-2. `封面图 Prompt`（来自 `image_prompt`）
-3. `文案方案`（逐个展示 `variations`，每个方案放代码块）
-4. `发布前检查清单`（价格、成色、瑕疵、发货、是否可小刀）
+2. `实时搜索参考`（若开启 `--live-search`，输出关键词、搜索链接、最近帖子摘要）
+3. `封面图 Prompt`（来自 `image_prompt`）
+4. `文案方案`（逐个展示 `variations`，每个方案放代码块）
+5. `发布前检查清单`（价格、成色、瑕疵、发货、是否可小刀）
 
 ## 4. 质量规则
 
@@ -83,6 +90,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File skills/xianyu-post-gen/scrip
 
 - `scripts/generate_post.py`: 主入口，解析输入并生成多版本。
 - `scripts/search_references.py`: 从 `references/reference_major_*.md` 打分召回竞品样例。
+- `scripts/xianyu_live_search.py`: 从用户输入提取关键词，实时检索 `goofish.com` 最近相关帖子并返回摘要。
 - `scripts/image_prompt_gen.py`: 生成闲鱼封面图提示词。
 - `scripts/build_references.ps1`: 将 jsonl 预处理为大类 reference 和检索缓存。
 - `scripts/validate_skill.py`: 快速检查依赖文件、reference 结构、脚本可运行性。

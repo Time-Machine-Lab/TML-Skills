@@ -57,6 +57,7 @@ def main() -> int:
         "assets/emojis.json",
         "scripts/generate_post.py",
         "scripts/search_references.py",
+        "scripts/xianyu_live_search.py",
         "references/REFERENCE_CATALOG.md",
     ]
     missing = _require_files(required)
