@@ -52,6 +52,57 @@ def format_with_emojis(template_str: str, emojis: Dict[str, str]) -> str:
     return out
 
 
+def sanitize_to_xianyu_emoji(text: str) -> str:
+    # Replace common unicode emojis with Xianyu-friendly bracket tags, then remove the rest.
+    if not text:
+        return ""
+
+    replacements = {
+        "🔥": "[火]",
+        "⭐": "[星星]",
+        "🌟": "[星星]",
+        "✨": "[星星]",
+        "❤️": "[爱心]",
+        "❤": "[爱心]",
+        "💖": "[爱心]",
+        "✅": "[对勾]",
+        "✔️": "[对勾]",
+        "⚡": "[闪电]",
+        "⚠️": "[警告]",
+        "⚠": "[警告]",
+        "💎": "[钻石]",
+        "🚀": "[火箭]",
+        "🎁": "[礼物]",
+        "🤝": "[握手]",
+        "💰": "[钱]",
+        "📷": "[相机]",
+        "🆕": "[全新]",
+        "😎": "[酷]",
+    }
+    out = text
+    for src, dst in replacements.items():
+        out = out.replace(src, dst)
+
+    # Strip remaining pictographic emojis to avoid unsupported symbols on Xianyu.
+    emoji_pattern = re.compile(
+        "["
+        "\U0001F300-\U0001F5FF"
+        "\U0001F600-\U0001F64F"
+        "\U0001F680-\U0001F6FF"
+        "\U0001F700-\U0001F77F"
+        "\U0001F780-\U0001F7FF"
+        "\U0001F800-\U0001F8FF"
+        "\U0001F900-\U0001F9FF"
+        "\U0001FA00-\U0001FAFF"
+        "\u2600-\u26FF"
+        "\u2700-\u27BF"
+        "]+",
+        flags=re.UNICODE,
+    )
+    out = emoji_pattern.sub("", out)
+    return normalize_whitespace(out)
+
+
 def clamp_title(title: str, max_len: int = 30) -> str:
     title = normalize_whitespace(title)
     if len(title) <= max_len:

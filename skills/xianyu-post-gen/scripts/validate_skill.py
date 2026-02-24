@@ -47,6 +47,9 @@ def _run_smoke_test() -> str:
 
     if not payload.get("variations"):
         return "smoke test failed: empty variations"
+    first = payload["variations"][0]
+    if any(ch in (first.get("title", "") + first.get("body", "")) for ch in ["🔥", "❤️", "✅", "⚡"]):
+        return "smoke test failed: unicode emoji not sanitized"
     return ""
 
 
@@ -55,6 +58,8 @@ def main() -> int:
         "SKILL.md",
         "assets/styles.json",
         "assets/emojis.json",
+        "scripts/init_workspace.py",
+        "scripts/run_workspace.py",
         "scripts/generate_post.py",
         "scripts/search_references.py",
         "scripts/xianyu_live_search.py",

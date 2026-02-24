@@ -70,6 +70,9 @@ def parse_input(raw_text: str) -> Dict[str, str]:
     key_map = {
         "商品": "product_name",
         "商品名称": "product_name",
+        "产品": "product_name",
+        "产品名": "product_name",
+        "产品名称": "product_name",
         "名称": "product_name",
         "品名": "product_name",
         "product": "product_name",
@@ -77,6 +80,7 @@ def parse_input(raw_text: str) -> Dict[str, str]:
         "category": "category",
         "分类": "category",
         "类目": "category",
+        "产品类型": "category",
         "成色": "condition",
         "condition": "condition",
         "价格": "price",
@@ -89,6 +93,10 @@ def parse_input(raw_text: str) -> Dict[str, str]:
         "原因": "reason",
         "reason": "reason",
         "亮点": "highlights",
+        "核心亮点": "highlights",
+        "核心卖点": "highlights",
+        "核心功能": "highlights",
+        "功能": "highlights",
         "卖点": "highlights",
         "优势": "highlights",
         "highlights": "highlights",
@@ -96,6 +104,7 @@ def parse_input(raw_text: str) -> Dict[str, str]:
         "缺陷": "defects",
         "defects": "defects",
         "发货": "delivery",
+        "交付方式": "delivery",
         "交易方式": "delivery",
         "delivery": "delivery",
         "地区": "location",
@@ -110,6 +119,8 @@ def parse_input(raw_text: str) -> Dict[str, str]:
         "配件": "accessories",
         "accessories": "accessories",
         "备注": "notes",
+        "目标人群": "notes",
+        "适用场景": "notes",
         "notes": "notes",
     }
 
@@ -125,7 +136,17 @@ def parse_input(raw_text: str) -> Dict[str, str]:
             fields[mapped] = value
 
     if not fields["product_name"]:
-        first_line = next((ln for ln in text.split("\n") if ln.strip()), "闲置物品")
+        first_line = next(
+            (
+                ln
+                for ln in text.split("\n")
+                if ln.strip()
+                and not ln.strip().startswith("#")
+                and ":" not in ln
+                and "## " not in ln
+            ),
+            "闲置物品",
+        )
         fields["product_name"] = re.sub(r"^[#\-*\s]+", "", first_line).strip()
 
     if not fields["reason"]:
@@ -135,6 +156,14 @@ def parse_input(raw_text: str) -> Dict[str, str]:
         bullets = [ln.strip("-• ").strip() for ln in text.split("\n") if ln.strip().startswith(("-", "•"))]
         if bullets:
             fields["highlights"] = "；".join(bullets[:4])
+        else:
+            detail_lines = []
+            for ln in text.split("\n"):
+                m = re.match(r"^\s*(核心功能|核心卖点|功能|卖点)\s*[:：]\s*(.+?)\s*$", ln)
+                if m:
+                    detail_lines.append(m.group(2).strip())
+            if detail_lines:
+                fields["highlights"] = "；".join(detail_lines[:4])
 
     if not fields["price"]:
         m_price = re.search(r"(?:售[价价]|一口价|价格)\s*[:：]?\s*([¥￥]?\d+(?:\.\d+)?)", text, flags=re.IGNORECASE)
@@ -297,11 +326,13 @@ def render_variation(
     title_candidates = style_cfg.get("title_templates") or ["{product_name} 闲置转"]
     title = text_formatter.safe_format(random.choice(title_candidates), values)
     title = text_formatter.format_with_emojis(title, emojis)
+    title = text_formatter.sanitize_to_xianyu_emoji(title)
     title = _trim_title_noise(title)
 
     body_template = style_cfg.get("body_template") or "{product_name}\n{highlights}\n{tags}"
     body = text_formatter.safe_format(body_template, {**values, "title": title})
     body = text_formatter.format_with_emojis(body, emojis)
+    body = text_formatter.sanitize_to_xianyu_emoji(body)
     body = text_formatter.compact_lines(text_formatter.normalize_whitespace(body))
 
     if is_digital and digital_notice not in body:

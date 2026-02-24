@@ -1,111 +1,82 @@
-﻿---
+---
 name: xianyu-post-gen
-description: 生成高质量闲鱼（二手交易）发布文案与封面图提示词。用于用户要“写闲鱼帖子/二手出售信息/优化成交文案/给出标题和标签/生成多风格版本”时，支持自动提取商品信息、匹配同类参考价、输出可直接发布的标题与正文。
+description: 为闲鱼帖子生成高质量内容与封面方案。用于用户希望基于产品介绍文档，一次性产出可发布的闲鱼标题、正文、封面提示词、竞品借鉴与发布检查清单。支持工作区模式（input/output）、实时检索同类帖子、闲鱼兼容表情清洗（移除 Unicode emoji 并替换为 [] 风格）。
 ---
 
-# Xianyu Post Generator
+# Xianyu Post Gen
 
-按下面流程工作，不要跳步。
+按工作区流程执行，默认不跳步。
 
-## 1. 收集必要信息
+## 1. 初始化工作区
 
-优先拿到这些字段：
-- `商品名称`
-- `成色`
-- `售价`
-- `转手原因`
-
-可选但强烈建议：
-- `原价`、`亮点`、`瑕疵`
-- `配件`、`发货方式`、`地区`、`邮费`
-- 是否为`虚拟商品`（课程/资料/账号等）
-
-如果信息不足，先追问 1-3 个最关键缺口再生成。
-
-## 2. 调用脚本
-
-将用户信息整理为文本后执行：
+优先使用工作区模式。先执行：
 
 ```bash
-py -3 skills/xianyu-post-gen/scripts/generate_post.py "<商品信息文本>" --json
+python skills/xianyu-post-gen/scripts/init_workspace.py <workspace_path>
 ```
 
-若环境里没有 `py`，改用：
+初始化后目录应为：
+- `input/context.txt`: 用户要求、风格偏好、价格策略、禁用词
+- `input/product_brief.md`: 产品介绍文档（功能、特点、目标人群等）
+- `input/similar_posts.txt`: 用户手工补充的竞品帖子（可选）
+- `output/`: 生成结果目录
+
+## 2. 读取输入并生成结果
+
+执行：
 
 ```bash
-python skills/xianyu-post-gen/scripts/generate_post.py "<商品信息文本>" --json
+python skills/xianyu-post-gen/scripts/run_workspace.py <workspace_path>
 ```
 
 可选参数：
-- `--style normal|trust|concise|professional|emotional|urgent|auto`
-- `--max-references 3`
-- `--max-variants 2`
-- `--live-search`（开启实时检索闲鱼最近相关帖子）
-- `--live-limit 3`
+- `--style auto|normal|trust|concise|professional|emotional|urgent`
+- `--max-variants 3`
+- `--live-limit 5`
 - `--live-timeout-sec 10`
 
-说明：
-- 若实时检索被风控或超时，脚本会返回关键词和搜索链接，Agent 可让用户手动打开链接补充最近帖子内容。
+脚本会自动：
+- 合并 `input/` 下文档
+- 检索参考库与实时闲鱼同类帖子
+- 生成多版文案并挑选推荐稿
+- 生成多套封面提示词
+- 强制清洗成闲鱼可用表情格式（`[火]` 等）
+- 写入 `output/` 文件
 
-如果 `references/` 新增了预处理数据，先更新参考库：
+## 3. 输出交付顺序
 
-```bash
-powershell -NoProfile -ExecutionPolicy Bypass -File skills/xianyu-post-gen/scripts/build_references.ps1
-```
+优先按下列顺序向用户展示：
+1. `output/market_insights.md`（竞品借鉴与定价锚点）
+2. `output/cover_prompts.md`（封面图方案与提示词）
+3. `output/post_variants.md`（多版帖子文案）
+4. `output/post_best.md`（推荐发布稿）
+5. `output/publish_checklist.md`（发布前检查）
 
-可选参数（增量场景）：
-- `-RawDir <jsonl目录>`
-- `-RefDir skills/xianyu-post-gen/references`
-- `-TopPerCategory 20`
-
-## 3. 输出给用户的格式
-
-按这个顺序输出：
-1. `参考价与竞品要点`（来自 `references`）
-2. `实时搜索参考`（若开启 `--live-search`，输出关键词、搜索链接、最近帖子摘要）
-3. `封面图 Prompt`（来自 `image_prompt`）
-4. `文案方案`（逐个展示 `variations`，每个方案放代码块）
-5. `发布前检查清单`（价格、成色、瑕疵、发货、是否可小刀）
+如用户要结构化结果，返回 `output/result.json`。
 
 ## 4. 质量规则
 
-生成时强制满足：
-- 标题不超过 30 字，信息明确，不堆叠夸张词。
-- 正文包含：商品信息、核心亮点、瑕疵说明、交易方式。
-- 不编造“全新/保修/官方渠道”等高风险承诺。
-- 虚拟商品必须带“可复制，发货后不退不换”提示。
-- 优先真实、可验证、可成交，不写空泛鸡汤。
-- 优先匹配对应大类 reference 的高热度样本，避免跨类目错配。
+必须满足：
+- 标题 `<= 30` 字。
+- 正文包含商品信息、价格/成色、瑕疵、交易方式。
+- 不编造“官方授权/保真无风险”等无法验证承诺。
+- 虚拟商品必须含“发货后不退不换”。
+- 不输出 Unicode emoji，统一使用闲鱼兼容 `[]` 表情风格。
+- 借鉴竞品但不照抄，保留用户产品独有卖点。
 
-## 5. 风格建议
+## 5. 脚本与资源
 
-- `normal`: 通用成交风格，适合大多数实物。
-- `trust`: 强调真实描述和交易安全，适合高客单价。
-- `concise`: 信息密度高，适合虚拟商品或快节奏成交。
-- `professional`: 参数导向，适合数码/设备类。
-- `emotional`: 轻情感表达，适合个人自用好物。
-- `urgent`: 急出场景，强调效率。
+- `scripts/init_workspace.py`: 初始化 input/output 工作区。
+- `scripts/run_workspace.py`: 工作区主流程，一键产出所有结果文件。
+- `scripts/generate_post.py`: 帖子文案核心生成器。
+- `scripts/xianyu_live_search.py`: 实时检索 goofish 同类帖子。
+- `scripts/search_references.py`: 从本地 `references/` 召回竞品样本。
+- `scripts/image_prompt_gen.py`: 封面图提示词生成。
+- `scripts/text_formatter.py`: 模板格式化与闲鱼表情兼容清洗。
+- `assets/styles.json`: 文案风格模板。
+- `assets/emojis.json`: 闲鱼表情映射。
 
-## 6. 资源说明
+## 6. 失败兜底
 
-- `scripts/generate_post.py`: 主入口，解析输入并生成多版本。
-- `scripts/search_references.py`: 从 `references/reference_major_*.md` 打分召回竞品样例。
-- `scripts/xianyu_live_search.py`: 从用户输入提取关键词，实时检索 `goofish.com` 最近相关帖子并返回摘要。
-- `scripts/image_prompt_gen.py`: 生成闲鱼封面图提示词。
-- `scripts/build_references.ps1`: 将 jsonl 预处理为大类 reference 和检索缓存。
-- `scripts/validate_skill.py`: 快速检查依赖文件、reference 结构、脚本可运行性。
-- `assets/styles.json`: 风格模板库，可扩展新风格。
-- `assets/emojis.json`: 闲鱼风格符号映射。
-- `references/REFERENCE_CATALOG.md`: 参考库总览与统计。
-- `references/reference_major_*.md`: 大类参考库，按需加载。
-
-如果用户要求“更像某类商品圈层话术”，先在 `styles.json` 增加样式，再调用脚本生成。
-
-## 7. 参考库按需加载规则
-
-先读 `references/REFERENCE_CATALOG.md`，再只加载一个最相关的大类文件：
-
-- AI 与自动化: `reference_major_ai_and_automation.md`
-- 编程与开发: `reference_major_programming_and_development.md`
-- 部署与运维: `reference_major_deployment_and_ops.md`
-- 账号与杂项: `reference_major_account_and_misc.md`
+- 若实时检索失败，继续使用本地 `references/`，并提示用户补充 `input/similar_posts.txt`。
+- 若输入信息缺失，先让用户补充 `input/product_brief.md` 的核心字段，再重新运行。
