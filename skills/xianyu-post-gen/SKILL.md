@@ -1,82 +1,148 @@
----
+﻿---
 name: xianyu-post-gen
 description: 为闲鱼帖子生成高质量内容与封面方案。用于用户希望基于产品介绍文档，一次性产出可发布的闲鱼标题、正文、封面提示词、竞品借鉴与发布检查清单。支持工作区模式（input/output）、实时检索同类帖子、闲鱼兼容表情清洗（移除 Unicode emoji 并替换为 [] 风格）。
 ---
-
 # Xianyu Post Gen
 
-按工作区流程执行，默认不跳步。
+用途：当用户有创建闲鱼帖子需求时，使用本 skill。agent 负责对话、需求澄清与内容生成；脚本只负责初始化工作区与即梦生成图片。
 
-## 1. 初始化工作区
+## 1. 触发条件
 
-优先使用工作区模式。先执行：
+用户出现“要发布闲鱼帖子/想生成闲鱼文案/要写闲鱼标题和正文/要做闲鱼封面”等意图时，启用本 skill。
+
+## 2. 种子与参考体系（核心能力）
+
+### 2.1 种子 (Seed)
+
+- 定义：某一类闲鱼商品帖子在“标题/正文结构/卖点表达/交易边界/信任提示”的通用模式。
+- 存储位置：`references/seed/*.md`
+- 当前种子：
+  - `references/seed/ai-tutorial-seed.md`
+  - `references/seed/cloud-deploy-seed.md`
+
+### 2.2 种子参考库
+
+- 存储位置：`references/document/seed/<seed_name>/`
+- 用途：为该类种子提供真实参考帖样本（Top 5）
+
+### 2.3 原始数据
+
+- `references/*.jsonl` 为原始爬取数据
+- 新数据进入后，需要进行“特征提取 + 归类 + 参考库补充”
+
+## 3. 工作区创建
+
+先创建一个新的工作区：
 
 ```bash
 python skills/xianyu-post-gen/scripts/init_workspace.py <workspace_path>
 ```
 
-初始化后目录应为：
-- `input/context.txt`: 用户要求、风格偏好、价格策略、禁用词
-- `input/product_brief.md`: 产品介绍文档（功能、特点、目标人群等）
-- `input/similar_posts.txt`: 用户手工补充的竞品帖子（可选）
-- `output/`: 生成结果目录
+工作区结构：
+- `input/context.txt`
+- `input/product_brief.md`
+- `input/similar_posts.txt`
+- `output/`
 
-## 2. 读取输入并生成结果
+提示：工作区路径建议带时间戳或商品名，便于后续管理。
 
-执行：
+## 4. 需求澄清与输入补充
+
+agent 需要以“友好 + 最少打扰”的方式提问，优先收集以下信息并写入 `input/`：
+- `input/context.txt`: 发帖目标、语气偏好（真实/专业/简洁/情绪化）、价格策略、禁用词
+- `input/product_brief.md`: 商品名称、类型（实物/虚拟）、成色、价格、卖点、瑕疵、交易方式、发货方式、同城优先与否
+- `input/similar_posts.txt`: 可选，用户补充竞品/参考帖
+
+用户可自行编辑 `input/` 文件后再继续。
+
+如果用户明确表示“先出一版”，agent 可基于现有信息合理发散，但必须遵守质量规则。
+
+## 5. 生成内容（agent 负责）
+
+agent 读取并综合：
+- `input/` 下所有内容
+- `references/seed/` 与 `references/document/seed/` 中的参考样本
+- `assets/emojis.json` 的表情映射规则
+
+输出内容写入 `output/`：
+- `output/post.md`: 最终可发布帖子（包含标题与正文）
+- `output/cover_prompt.md`: 封面图提示词（中文为主，包含风格、质感、构图、信息层级）
+
+生成规则：
+- 标题 <= 30 字
+- 正文包含：商品信息、价格/成色、瑕疵、交易方式
+- 不编造“官方授权/保真无风险”等无法验证承诺
+- 虚拟商品必须包含“发货后不退不换”
+- 不输出 Unicode emoji，只使用 `[]` 表情风格（参考 `assets/emojis.json`）
+- 借鉴参考帖子但不抄袭，保留用户产品独特卖点
+
+## 6. 封面图流程（必须询问）
+
+生成帖子后，必须询问用户是否需要封面图：
+- 如果不需要，流程结束
+- 如果需要，继续询问比例与数量
+
+必须询问的信息：
+- 比例：常用 `3:4`、`9:16`、`1:1`
+- 数量：默认 1 张，用户可指定多张
+- 若用户有其它比例/分辨率需求，允许直接提供分辨率（如 `1024x1536`）
+
+## 7. 即梦生成图片（可选）
+
+分辨率约定：
+- `3:4` -> `1024x1365`
+- `9:16` -> `1024x1820`
+- `1:1` -> `1024x1024`
+
+调用示例：
 
 ```bash
-python skills/xianyu-post-gen/scripts/run_workspace.py <workspace_path>
+python skills/xianyu-post-gen/scripts/jimeng_api_client.py --prompt "你的提示词" --size 1024x1365 --download <output_path>
 ```
 
-可选参数：
-- `--style auto|normal|trust|concise|professional|emotional|urgent`
-- `--max-variants 3`
-- `--live-limit 5`
-- `--live-timeout-sec 10`
+图片保存规则：
+- 下载路径必须放到 `output/` 下，例如：`output/cover_3x4_1.png`
+- 多张时按序号命名：`output/cover_3x4_1.png`、`output/cover_3x4_2.png`
+- 生成完成后，agent 告知用户下载路径
 
-脚本会自动：
-- 合并 `input/` 下文档
-- 检索参考库与实时闲鱼同类帖子
-- 生成多版文案并挑选推荐稿
-- 生成多套封面提示词
-- 强制清洗成闲鱼可用表情格式（`[火]` 等）
-- 写入 `output/` 文件
+## 8. 新数据导入与种子提取（重要）
 
-## 3. 输出交付顺序
+当用户提供新的 `*.jsonl` 数据时，agent 需要完成以下步骤：
 
-优先按下列顺序向用户展示：
-1. `output/market_insights.md`（竞品借鉴与定价锚点）
-2. `output/cover_prompts.md`（封面图方案与提示词）
-3. `output/post_variants.md`（多版帖子文案）
-4. `output/post_best.md`（推荐发布稿）
-5. `output/publish_checklist.md`（发布前检查）
+1. **抽取 Top 5 参考帖**
+   - 以“想要人数”排序，取前 5
+   - 输出为 `references/document/seed/<seed_name>/<data_name>_reference.md`
 
-如用户要结构化结果，返回 `output/result.json`。
+2. **归类到现有种子**
+   - 若内容属于“AI 教程/资料/工具”，归入 `ai-tutorial-seed`
+   - 若内容属于“云服务器/部署/运维”，归入 `cloud-deploy-seed`
+   - 若无法归类，新增种子文件并创建对应参考目录
 
-## 4. 质量规则
+3. **更新种子特征**
+   - 从新增参考帖提炼：标题结构、常见卖点、交付/交易边界、常见标签
+   - 更新对应 `references/seed/<seed_name>.md`
 
-必须满足：
-- 标题 `<= 30` 字。
-- 正文包含商品信息、价格/成色、瑕疵、交易方式。
-- 不编造“官方授权/保真无风险”等无法验证承诺。
-- 虚拟商品必须含“发货后不退不换”。
-- 不输出 Unicode emoji，统一使用闲鱼兼容 `[]` 表情风格。
-- 借鉴竞品但不照抄，保留用户产品独有卖点。
+4. **同步表情映射**
+   - 从新数据中提取可用的 `[]` 表情标签
+   - 补充到 `assets/emojis.json`
 
-## 5. 脚本与资源
+## 9. 目录结构
 
-- `scripts/init_workspace.py`: 初始化 input/output 工作区。
-- `scripts/run_workspace.py`: 工作区主流程，一键产出所有结果文件。
-- `scripts/generate_post.py`: 帖子文案核心生成器。
-- `scripts/xianyu_live_search.py`: 实时检索 goofish 同类帖子。
-- `scripts/search_references.py`: 从本地 `references/` 召回竞品样本。
-- `scripts/image_prompt_gen.py`: 封面图提示词生成。
-- `scripts/text_formatter.py`: 模板格式化与闲鱼表情兼容清洗。
-- `assets/styles.json`: 文案风格模板。
-- `assets/emojis.json`: 闲鱼表情映射。
-
-## 6. 失败兜底
-
-- 若实时检索失败，继续使用本地 `references/`，并提示用户补充 `input/similar_posts.txt`。
-- 若输入信息缺失，先让用户补充 `input/product_brief.md` 的核心字段，再重新运行。
+```text
+./skills/xianyu-post-gen/
+├─ SKILL.md
+├─ assets/
+│  └─ emojis.json
+├─ references/
+│  ├─ seed/
+│  │  ├─ ai-tutorial-seed.md
+│  │  └─ cloud-deploy-seed.md
+│  ├─ document/
+│  │  └─ seed/
+│  │     ├─ ai-tutorial-seed/
+│  │     └─ cloud-deploy-seed/
+│  └─ *.jsonl
+└─ scripts/
+   ├─ init_workspace.py
+   └─ jimeng_api_client.py
+```
