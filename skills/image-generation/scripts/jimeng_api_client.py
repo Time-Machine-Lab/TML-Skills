@@ -90,7 +90,7 @@ def parse_bool(value: Optional[str]) -> Optional[bool]:
 def main() -> int:
     parser = argparse.ArgumentParser(description="即梦(Seedream) API 调用脚本")
     parser.add_argument("--prompt", required=True, help="文生图提示词")
-    parser.add_argument("--model", default="doubao-seedream-3-0-t2i-250415", help="模型名称")
+    parser.add_argument("--model", default="doubao-seedream-4-5-251128", help="模型名称")
     parser.add_argument("--response-format", default="url", choices=["url", "b64_json"], help="返回格式")
     parser.add_argument("--size", default="1024x1024", help="图像尺寸，如 1024x1024")
     parser.add_argument("--seed", type=int, default=None, help="随机种子")

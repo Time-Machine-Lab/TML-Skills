@@ -2,6 +2,7 @@
 name: xianyu-post-gen
 description: 为闲鱼帖子生成高质量内容与封面方案。用于用户希望基于产品介绍文档，一次性产出可发布的闲鱼标题、正文、封面提示词、竞品借鉴与发布检查清单。支持工作区模式（input/output）、实时检索同类帖子、闲鱼兼容表情清洗（移除 Unicode emoji 并替换为 [] 风格）。
 ---
+
 # Xianyu Post Gen
 
 用途：当用户有创建闲鱼帖子需求时，使用本 skill。agent 负责对话、需求澄清与内容生成；脚本只负责初始化工作区与即梦生成图片。
@@ -116,65 +117,24 @@ agent 读取并综合：
 - 若 `output/cover_prompt.md` 中包含多套方案（A/B/...），必须先询问用户选择哪几套用于生成
 - 默认建议用户选择 1~3 套
 
-## 7. 图片生成（可选）
+## 7. 图片生成（通过 image-generation skill）
 
-支持两种生成方式：即梦 (Jimeng) 和 Nano-banana。
+本 Skill 不再直接包含图片生成脚本，而是通过调用 `image-generation` skill 来实现。
 
 ### 7.1 提示词种子 (Prompt Seed)
 
-为了保证生成质量，建议优先使用经过验证的“封面提示词种子”。
-
 - **种子位置**: `skills/xianyu-post-gen/references/seed/cover-prompt-seed.md`
-- **使用原则**:
-  1.  **优先参考**: 生成提示词前，先读取该文件，选择合适的模板（如“经典电商大字报”）。
-  2.  **持续迭代**: 根据用户反馈（如“文字太小”、“太花哨”），不断优化该文件中的模板。
-  3.  **核心要素**: 必须强调“巨大文字”、“高对比度”、“清晰信息层级”与“生动有趣的主体”。
+- **使用原则**: 优先参考种子库中的模板（如“经典电商大字报”）。
 
-### 7.2 通用配置
+### 7.2 调用 image-generation skill
 
-所有脚本共用配置文件 `skills/xianyu-post-gen/scripts/api_config.json`，需在其中配置 `api_key`：
+请参考 `skills/image-generation/SKILL.md` 文档。
 
-```json
-{
-  "api_key": "YOUR_KEY"
-}
-```
+常用调用路径：
+- Nano-banana 文生图: `skills/image-generation/scripts/nanabana_api_client.py`
+- Jimeng 文生图: `skills/image-generation/scripts/jimeng_api_client.py`
 
-### 7.3 即梦 (Jimeng) 生成
-
-分辨率约定：
-- `3:4` -> `1024x1365`
-- `9:16` -> `1024x1820`
-- `1:1` -> `1024x1024`
-
-调用示例：
-
-```bash
-python skills/xianyu-post-gen/scripts/jimeng_api_client.py --prompt "你的提示词" --size 1024x1365 --download <output_path>
-```
-
-执行要求：
-- 直接在终端调用 `jimeng_api_client.py`
-- 常用参数：`--prompt` (必填), `--size` (可选), `--download` (推荐)
-- 默认模型：`doubao-seedream-3-0-t2i-250415`
-
-### 7.4 Nano-banana 生成
-
-特点：支持更丰富的比例设置与 4K 高清生成，且失败不扣费。
-
-参数说明：
-- `--model`：模型名称，默认 `nano-banana-2-4k`
-- `--aspect-ratio`：图片比例，支持 `1:1`, `16:9`, `4:3`, `3:4`, `9:16`, `2:3`, `3:2` 等
-- `--image-size`：图片大小，支持 `1K`, `2K`, `4K`（默认 `1K`）
-- `--download`：输出文件路径
-
-调用示例：
-
-```bash
-python skills/xianyu-post-gen/scripts/nanabana_api_client.py --prompt "你的提示词" --model "nano-banana-2-4k" --aspect-ratio "1:1" --image-size "1K" --download <output_path>
-```
-
-### 7.5 图片保存规则
+### 7.3 图片保存规则
 
 - 下载路径必须放到 `output/` 下，例如：`output/cover_3x4_1.png`
 - 多张时按序号命名：`output/cover_3x4_1.png`、`output/cover_3x4_2.png`
@@ -219,8 +179,5 @@ python skills/xianyu-post-gen/scripts/nanabana_api_client.py --prompt "你的提
 │  │     └─ cloud-deploy-seed/
 │  └─ *.jsonl
 └─ scripts/
-   ├─ api_config.json
-   ├─ init_workspace.py
-   ├─ jimeng_api_client.py
-   └─ nanabana_api_client.py
+   └─ init_workspace.py
 ```
