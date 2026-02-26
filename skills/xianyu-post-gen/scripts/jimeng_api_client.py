@@ -8,7 +8,7 @@ import urllib.request
 from typing import Any, Dict, Optional
 
 BASE_URL = "https://api.bltcy.top"
-CONFIG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "jimeng_config.json")
+CONFIG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "api_config.json")
 
 
 def build_payload(args: argparse.Namespace) -> Dict[str, Any]:
