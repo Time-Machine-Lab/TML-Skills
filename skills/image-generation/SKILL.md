@@ -81,23 +81,35 @@ python skills/image-generation/scripts/nanabana_img2img_client.py \
   --download "output/combined.png"
 ```
 
-### 3.3 Jimeng (即梦) 文生图
+### 3.3 Jimeng (即梦4.5) 文生图/图生图
 
 **脚本**: `skills/image-generation/scripts/jimeng_api_client.py`
 
-**用途**: 备用模型，适合需要特定中文语境理解的场景。
+**用途**: 备用模型，适合需要特定中文语境理解的场景。默认使用 `doubao-seedream-4-5-251128` 模型。支持多图参考和批量生成。
 
 **参数**:
 - `--prompt` (必填): 提示词
-- `--size`: 尺寸 (如 `1024x1024`)
-- `--download`: 输出文件路径
+- `--size`: 尺寸 (支持 `2K`, `1920x1920` 等，默认 `2K`)。**注意：即梦4.5模型要求最小像素数为 3,686,400 (即 1920x1920)。**
+- `--image`: (可选) 参考图 URL，支持多张 (空格分隔)。
+- `--n`: (可选) 生成数量，支持 1-4 张 (默认 1)。
+- `--download`: 输出文件路径。如果生成多张，会自动添加 `_0`, `_1` 后缀。
 
-**示例**:
+**文生图示例**:
 ```bash
 python skills/image-generation/scripts/jimeng_api_client.py \
   --prompt "一只可爱的猫" \
-  --size "1024x1024" \
+  --size "2K" \
   --download "output/cat.png"
+```
+
+**多图参考 + 批量生成示例**:
+```bash
+python skills/image-generation/scripts/jimeng_api_client.py \
+  --prompt "生成3张女孩和奶牛玩偶在游乐园开心地坐过山车的图片，涵盖早晨、中午、晚上" \
+  --image "https://example.com/ref1.png" "https://example.com/ref2.png" \
+  --n 3 \
+  --size "2K" \
+  --download "output/story.png"
 ```
 
 ## 4. 最佳实践 (Best Practices)
