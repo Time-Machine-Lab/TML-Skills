@@ -20,6 +20,9 @@
 - 多图参考融合
 - 一次输出多张候选图
 
+先读：
+- `references/common.md`
+
 ## 2. 入口脚本
 
 - `skills/image-generation/scripts/jimeng_api_client.js`
@@ -42,6 +45,8 @@ node skills/image-generation/scripts/jimeng_api_client.js ...
 - `--watermark` 可选，布尔值字符串（`true/false/1/0/yes/no/on/off`）
 - `--download` 可选，输出文件路径
 - `--timeout` 可选，超时秒数，默认 `60`
+- `--retry` 可选，重试次数，默认 `2`
+- `--retry-delay` 可选，重试基准延迟毫秒，默认 `800`
 
 约束提示：
 - 即梦 4.5 常见要求是较高分辨率，建议使用 `2K` 或满足最小像素要求的尺寸。
@@ -83,6 +88,7 @@ node skills/image-generation/scripts/jimeng_api_client.js \
   - 使用标准布尔字符串。
 - `Error encoding image`
   - 本地图片路径不存在或不可读。
+- `unexpected argument ... found`（PowerShell 常见）
+  - 提示词含空格时优先使用单引号：`--prompt 'A B C'`。
 - 配置错误
   - 检查 `skills/image-generation/scripts/api_config.json` 中 `api_key` 与 `base_url`。
-

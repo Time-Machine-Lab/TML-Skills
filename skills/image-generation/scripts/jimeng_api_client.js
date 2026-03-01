@@ -8,8 +8,10 @@ const {
   isRemoteUrl,
   loadApiKey,
   loadConfig,
+  mergePromptWithPositionals,
   normalizeArgvForMultiValueOptions,
   parseBooleanString,
+  parseRetryOptions,
   requestJson,
   resolveBaseUrl,
   resolveConfigPath,
@@ -65,26 +67,45 @@ async function main() {
   const configPath = resolveConfigPath(scriptDir);
   const normalizedArgv = normalizeArgvForMultiValueOptions(process.argv.slice(2), ["--image"]);
 
-  const { values } = parseArgs({
-    args: normalizedArgv,
-    options: {
-      prompt: { type: "string" },
-      model: { type: "string", default: "doubao-seedream-4-5-251128" },
-      "response-format": { type: "string", default: "url" },
-      size: { type: "string", default: "2K" },
-      seed: { type: "string" },
-      "guidance-scale": { type: "string" },
-      watermark: { type: "string" },
-      timeout: { type: "string", default: "60" },
-      download: { type: "string", default: "" },
-      image: { type: "string", multiple: true },
-      n: { type: "string", default: "1" },
-    },
-    strict: true,
-    allowPositionals: false,
-  });
+  let parsed;
+  try {
+    parsed = parseArgs({
+      args: normalizedArgv,
+      options: {
+        prompt: { type: "string" },
+        model: { type: "string", default: "doubao-seedream-4-5-251128" },
+        "response-format": { type: "string", default: "url" },
+        size: { type: "string", default: "2K" },
+        seed: { type: "string" },
+        "guidance-scale": { type: "string" },
+        watermark: { type: "string" },
+        timeout: { type: "string", default: "60" },
+        retry: { type: "string", default: "2" },
+        "retry-delay": { type: "string", default: "800" },
+        download: { type: "string", default: "" },
+        image: { type: "string", multiple: true },
+        n: { type: "string", default: "1" },
+      },
+      strict: true,
+      allowPositionals: true,
+    });
+  } catch (error) {
+    console.error(`Argument parsing error: ${error.message}`);
+    if (/unexpected argument/i.test(String(error.message || ""))) {
+      console.error("PowerShell tip: use single quotes for prompts with spaces, e.g. --prompt 'A B C'.");
+    }
+    return 2;
+  }
 
-  if (!values.prompt) {
+  const { values, positionals } = parsed;
+  const promptResult = mergePromptWithPositionals(values.prompt, positionals);
+  const prompt = promptResult.prompt;
+  if (promptResult.merged) {
+    console.error("Detected extra positional arguments. Auto-merged into --prompt.");
+    console.error("PowerShell tip: use single quotes for prompts with spaces, e.g. --prompt 'A B C'.");
+  }
+
+  if (!prompt) {
     console.error("Missing required argument: --prompt");
     return 2;
   }
@@ -99,6 +120,14 @@ async function main() {
     console.error("Invalid --timeout value");
     return 2;
   }
+  let retryOptions;
+  try {
+    retryOptions = parseRetryOptions(values);
+  } catch (error) {
+    console.error(error.message);
+    return 2;
+  }
+  const { retry, retryDelay } = retryOptions;
 
   const n = Number.parseInt(values.n, 10);
   if (![1, 2, 3, 4].includes(n)) {
@@ -162,6 +191,7 @@ async function main() {
   const payload = buildPayload(
     {
       ...values,
+      prompt,
       n,
       seed,
       "guidance-scale": guidanceScale,
@@ -171,6 +201,8 @@ async function main() {
   );
 
   const url = `${baseUrl}/v1/images/generations`;
+  console.error(`Calling API: ${url}`);
+  console.error("Generating image... please wait.");
 
   let result;
   try {
@@ -180,6 +212,8 @@ async function main() {
       apiKey,
       body: payload,
       timeoutSeconds: timeout,
+      maxRetries: retry,
+      retryDelayMs: retryDelay,
     });
   } catch (error) {
     console.error(`Request failed: ${error.message}`);
@@ -202,7 +236,7 @@ async function main() {
       }
       const savePath = buildDownloadPath(values.download, i, data.length);
       try {
-        await downloadFile(imageUrl, savePath, timeout);
+        await downloadFile(imageUrl, savePath, timeout, retry, retryDelay);
         console.error(`Downloaded image -> ${savePath}`);
       } catch (error) {
         console.error(`Download failed for ${savePath}: ${error.message}`);

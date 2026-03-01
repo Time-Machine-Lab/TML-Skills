@@ -15,6 +15,11 @@ description: 通用 AI 图像生成与图像编辑能力。支持文生图和图
 | Jimeng（即梦） | 文生图、图生图、批量生成（1-4） | 中文语境生成、故事组图、备用模型 | `references/jimeng.md` |
 | Midjourney（MJ） | 文生图、文图生图、任务轮询 | 艺术风格图、壁纸、创意探索 | `references/midjourney.md` |
 
+## 通用调用规范
+
+- 先读取：`references/common.md`
+- 再按模型读取对应文档，不要一次性加载全部 references。
+
 ## 共享配置
 
 - 配置文件：`skills/image-generation/scripts/api_config.json`
@@ -24,12 +29,13 @@ description: 通用 AI 图像生成与图像编辑能力。支持文生图和图
 
 ## 懒加载规则
 
-1. 先根据需求选模型，不要一次性读取全部 references 文档。
-2. 仅加载目标模型文档：
+1. 先加载 `references/common.md`，确认环境、引号规范、重试与输出约定。
+2. 再根据需求选模型，不要一次性读取全部模型文档。
+3. 仅加载目标模型文档：
    - Nano-banana：`references/nano-banana.md`
    - Jimeng：`references/jimeng.md`
    - Midjourney：`references/midjourney.md`
-3. 执行命令前，先核对该文档中的参数约束、输入输出和错误处理建议。
+4. 执行命令前，核对参数约束、输入输出与错误处理建议。
 
 ## 快速选型
 

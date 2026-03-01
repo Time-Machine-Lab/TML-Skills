@@ -17,6 +17,9 @@
 - 电商封面、海报、插画
 - 参考图风格迁移与重绘
 
+先读：
+- `references/common.md`
+
 ## 2. 入口脚本
 
 - 文生图：`skills/image-generation/scripts/nanabana_api_client.js`
@@ -38,6 +41,8 @@
 - `--image-size` 可选，`1K` / `2K` / `4K`，默认 `1K`
 - `--download` 可选，输出文件路径
 - `--timeout` 可选，超时秒数，默认 `120`
+- `--retry` 可选，重试次数，默认 `2`
+- `--retry-delay` 可选，重试基准延迟毫秒，默认 `800`
 
 示例：
 ```bash
@@ -66,6 +71,8 @@ node skills/image-generation/scripts/nanabana_api_client.js \
 - `--image-size` 可选，`1K` / `2K` / `4K`，默认 `1K`
 - `--download` 可选，输出文件路径
 - `--timeout` 可选，超时秒数，默认 `120`
+- `--retry` 可选，重试次数，默认 `2`
+- `--retry-delay` 可选，重试基准延迟毫秒，默认 `800`
 
 单图示例：
 ```bash
@@ -91,6 +98,9 @@ node skills/image-generation/scripts/nanabana_img2img_client.js \
 
 - `Missing required argument`
   - 检查 `--prompt` 或 `--image-path` 是否传入。
+- `unexpected argument ... found`（PowerShell 常见）
+  - 提示词含空格时，优先使用单引号：`--prompt 'A B C'`。
+  - 新版本脚本会尝试把多余位置参数自动拼接回 `--prompt`，但仍建议显式加引号。
 - `Invalid --image-size`
   - 仅支持 `1K` / `2K` / `4K`。
 - `Image file not found`
@@ -100,3 +110,6 @@ node skills/image-generation/scripts/nanabana_img2img_client.js \
 - 配置错误
   - 检查 `skills/image-generation/scripts/api_config.json` 中 `api_key` 是否有效。
 
+补充说明：
+- 若 `--download` 指向的目录不存在，脚本会自动创建目录后再写入图片。
+- 生成大图（如 `4K`）时会有明显等待时间，CLI 会输出 `Generating image... please wait.` 提示。

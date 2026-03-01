@@ -1,10 +1,11 @@
 #!/usr/bin/env node
-const path = require("node:path");
 const { parseArgs } = require("node:util");
 const {
   downloadFile,
   loadApiKey,
   loadConfig,
+  mergePromptWithPositionals,
+  parseRetryOptions,
   requestJson,
   resolveBaseUrl,
   resolveConfigPath,
@@ -33,21 +34,41 @@ async function main() {
   const scriptDir = __dirname;
   const configPath = resolveConfigPath(scriptDir);
 
-  const { values } = parseArgs({
-    options: {
-      prompt: { type: "string" },
-      model: { type: "string", default: "nano-banana-2-4k" },
-      "response-format": { type: "string", default: "url" },
-      "aspect-ratio": { type: "string", default: "1:1" },
-      "image-size": { type: "string", default: "1K" },
-      download: { type: "string", default: "" },
-      timeout: { type: "string", default: "120" },
-    },
-    strict: true,
-    allowPositionals: false,
-  });
+  let parsed;
+  try {
+    parsed = parseArgs({
+      options: {
+        prompt: { type: "string" },
+        model: { type: "string", default: "nano-banana-2-4k" },
+        "response-format": { type: "string", default: "url" },
+        "aspect-ratio": { type: "string", default: "1:1" },
+        "image-size": { type: "string", default: "1K" },
+        download: { type: "string", default: "" },
+        timeout: { type: "string", default: "120" },
+        retry: { type: "string", default: "2" },
+        "retry-delay": { type: "string", default: "800" },
+      },
+      strict: true,
+      allowPositionals: true,
+    });
+  } catch (error) {
+    console.error(`Argument parsing error: ${error.message}`);
+    if (/unexpected argument/i.test(String(error.message || ""))) {
+      console.error("PowerShell tip: use single quotes for prompts with spaces, e.g. --prompt 'A B C'.");
+    }
+    return 2;
+  }
 
-  if (!values.prompt) {
+  const { values, positionals } = parsed;
+  const promptResult = mergePromptWithPositionals(values.prompt, positionals);
+  const prompt = promptResult.prompt;
+
+  if (promptResult.merged) {
+    console.error("Detected extra positional arguments. Auto-merged into --prompt.");
+    console.error("PowerShell tip: use single quotes for prompts with spaces, e.g. --prompt 'A B C'.");
+  }
+
+  if (!prompt) {
     console.error("Missing required argument: --prompt");
     return 2;
   }
@@ -67,6 +88,14 @@ async function main() {
     console.error("Invalid --timeout value");
     return 2;
   }
+  let retryOptions;
+  try {
+    retryOptions = parseRetryOptions(values);
+  } catch (error) {
+    console.error(error.message);
+    return 2;
+  }
+  const { retry, retryDelay } = retryOptions;
 
   let apiKey;
   let baseUrl;
@@ -79,11 +108,15 @@ async function main() {
     return 2;
   }
 
-  const payload = buildPayload(values);
+  const payload = buildPayload({
+    ...values,
+    prompt,
+  });
   const url = `${baseUrl}/v1/images/generations`;
 
   console.error(`Calling API: ${url}`);
   console.error(`Payload: ${JSON.stringify(payload)}`);
+  console.error("Generating image... please wait.");
 
   let result;
   try {
@@ -93,6 +126,8 @@ async function main() {
       apiKey,
       body: payload,
       timeoutSeconds: timeout,
+      maxRetries: retry,
+      retryDelayMs: retryDelay,
       extraHeaders: {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
       },
@@ -112,7 +147,7 @@ async function main() {
       return 1;
     }
     try {
-      await downloadFile(imageUrl, values.download, timeout);
+      await downloadFile(imageUrl, values.download, timeout, retry, retryDelay);
       console.error(`Downloaded image -> ${values.download}`);
     } catch (error) {
       console.error(`Download failed: ${error.message}`);

@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+const path = require("node:path");
 const { parseArgs } = require("node:util");
 const {
   downloadFile,
@@ -7,7 +8,9 @@ const {
   isRemoteUrl,
   loadApiKey,
   loadConfig,
+  mergePromptWithPositionals,
   normalizeArgvForMultiValueOptions,
+  parseRetryOptions,
   requestJson,
   resolveConfigPath,
 } = require("./lib/image_api_common");
@@ -78,7 +81,72 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function pollTask(apiKey, fetchUrl, timeoutSeconds, pollInterval, pollTimeout) {
+function buildIndexedPath(basePath, index, prefix = "") {
+  const ext = path.extname(basePath);
+  const stem = ext ? basePath.slice(0, -ext.length) : basePath;
+  return `${stem}${prefix}${index}${ext}`;
+}
+
+function getSingleImageUrls(taskResult) {
+  const raw = Array.isArray(taskResult.imageUrls) ? taskResult.imageUrls : [];
+  const urls = [];
+  for (const item of raw) {
+    if (!item) {
+      continue;
+    }
+    if (typeof item === "string") {
+      const value = item.trim();
+      if (value) {
+        urls.push(value);
+      }
+      continue;
+    }
+    const value = String(item.url || "").trim();
+    if (value) {
+      urls.push(value);
+    }
+  }
+  return urls;
+}
+
+async function downloadTaskImages(taskResult, downloadPath, downloadMode, timeoutSeconds, retry, retryDelay) {
+  const mode = String(downloadMode || "grid").trim().toLowerCase();
+  if (!["grid", "single", "both"].includes(mode)) {
+    throw new Error("Invalid --download-mode. Use: grid, single, or both");
+  }
+
+  let downloadCount = 0;
+
+  if (mode === "grid" || mode === "both") {
+    const imageUrl = String(taskResult.imageUrl || "").trim();
+    if (imageUrl) {
+      await downloadFile(imageUrl, downloadPath, timeoutSeconds, retry, retryDelay);
+      console.error(`Downloaded image (grid) -> ${downloadPath}`);
+      downloadCount += 1;
+    } else {
+      console.error("Warning: imageUrl is empty, skip grid download");
+    }
+  }
+
+  if (mode === "single" || mode === "both") {
+    const urls = getSingleImageUrls(taskResult);
+    if (urls.length === 0) {
+      console.error("Warning: imageUrls is empty, skip single-image download");
+    }
+    for (let i = 0; i < urls.length; i += 1) {
+      const savePath = urls.length === 1 ? downloadPath : buildIndexedPath(downloadPath, i + 1, "_single_");
+      await downloadFile(urls[i], savePath, timeoutSeconds, retry, retryDelay);
+      console.error(`Downloaded image (single) -> ${savePath}`);
+      downloadCount += 1;
+    }
+  }
+
+  if (downloadCount === 0) {
+    throw new Error("Task finished but no downloadable image URL found");
+  }
+}
+
+async function pollTask(apiKey, fetchUrl, timeoutSeconds, pollInterval, pollTimeout, retry, retryDelay) {
   const deadline = Date.now() + pollTimeout * 1000;
   let last = {};
 
@@ -89,6 +157,8 @@ async function pollTask(apiKey, fetchUrl, timeoutSeconds, pollInterval, pollTime
       apiKey,
       body: undefined,
       timeoutSeconds,
+      maxRetries: retry,
+      retryDelayMs: retryDelay,
     });
 
     const status = String(last.status || "").toUpperCase();
@@ -96,6 +166,7 @@ async function pollTask(apiKey, fetchUrl, timeoutSeconds, pollInterval, pollTime
     if (["SUCCESS", "FAILURE", "CANCEL"].includes(status) || progress === "100%") {
       return last;
     }
+    console.error(`Polling status: ${status || "PENDING"}${progress ? ` (${progress})` : ""}`);
 
     await sleep(Math.max(200, Math.floor(pollInterval * 1000)));
   }
@@ -108,25 +179,45 @@ async function main() {
   const configPath = resolveConfigPath(scriptDir);
   const normalizedArgv = normalizeArgvForMultiValueOptions(process.argv.slice(2), ["--image-path"]);
 
-  const { values } = parseArgs({
-    args: normalizedArgv,
-    options: {
-      prompt: { type: "string" },
-      "image-path": { type: "string", multiple: true },
-      "base-url": { type: "string", default: "" },
-      "route-prefix": { type: "string" },
-      "notify-hook": { type: "string", default: "" },
-      timeout: { type: "string", default: "120" },
-      "no-poll": { type: "boolean", default: false },
-      "poll-interval": { type: "string", default: "3" },
-      "poll-timeout": { type: "string", default: "600" },
-      download: { type: "string", default: "" },
-    },
-    strict: true,
-    allowPositionals: false,
-  });
+  let parsed;
+  try {
+    parsed = parseArgs({
+      args: normalizedArgv,
+      options: {
+        prompt: { type: "string" },
+        "image-path": { type: "string", multiple: true },
+        "base-url": { type: "string", default: "" },
+        "route-prefix": { type: "string" },
+        "notify-hook": { type: "string", default: "" },
+        timeout: { type: "string", default: "120" },
+        retry: { type: "string", default: "2" },
+        "retry-delay": { type: "string", default: "800" },
+        "no-poll": { type: "boolean", default: false },
+        "poll-interval": { type: "string", default: "3" },
+        "poll-timeout": { type: "string", default: "600" },
+        download: { type: "string", default: "" },
+        "download-mode": { type: "string", default: "grid" },
+      },
+      strict: true,
+      allowPositionals: true,
+    });
+  } catch (error) {
+    console.error(`Argument parsing error: ${error.message}`);
+    if (/unexpected argument/i.test(String(error.message || ""))) {
+      console.error("PowerShell tip: use single quotes for prompts with spaces, e.g. --prompt 'A B C'.");
+    }
+    return 2;
+  }
 
-  if (!values.prompt) {
+  const { values, positionals } = parsed;
+  const promptResult = mergePromptWithPositionals(values.prompt, positionals);
+  const prompt = promptResult.prompt;
+  if (promptResult.merged) {
+    console.error("Detected extra positional arguments. Auto-merged into --prompt.");
+    console.error("PowerShell tip: use single quotes for prompts with spaces, e.g. --prompt 'A B C'.");
+  }
+
+  if (!prompt) {
     console.error("Missing required argument: --prompt");
     return 2;
   }
@@ -144,6 +235,18 @@ async function main() {
   }
   if (!Number.isFinite(pollTimeout) || pollTimeout <= 0) {
     console.error("Invalid --poll-timeout value");
+    return 2;
+  }
+  let retryOptions;
+  try {
+    retryOptions = parseRetryOptions(values);
+  } catch (error) {
+    console.error(error.message);
+    return 2;
+  }
+  const { retry, retryDelay } = retryOptions;
+  if (!["grid", "single", "both"].includes(String(values["download-mode"] || "").trim().toLowerCase())) {
+    console.error("Invalid --download-mode. Use: grid, single, or both");
     return 2;
   }
 
@@ -170,11 +273,11 @@ async function main() {
   }
 
   const submitUrl = buildSubmitUrl(baseUrl, routePrefix);
-  const finalPrompt = normalizePrompt(values.prompt);
+  const finalPrompt = normalizePrompt(prompt);
 
   console.error(`Submit URL: ${submitUrl}`);
   console.error(`Mode: ${base64Array.length > 0 ? "文图生图" : "文生图"}`);
-  if (finalPrompt !== String(values.prompt).trim()) {
+  if (finalPrompt !== prompt) {
     console.error(`Auto append default MJ version: --v ${DEFAULT_MJ_VERSION}`);
   }
 
@@ -188,12 +291,15 @@ async function main() {
 
   let submitResult;
   try {
+    console.error("Submitting MJ task... please wait.");
     submitResult = await requestJson({
       method: "POST",
       url: submitUrl,
       apiKey,
       body: payload,
       timeoutSeconds: timeout,
+      maxRetries: retry,
+      retryDelayMs: retryDelay,
     });
   } catch (error) {
     console.error(`Submit failed: ${error.message}`);
@@ -217,7 +323,7 @@ async function main() {
 
   let taskResult;
   try {
-    taskResult = await pollTask(apiKey, fetchUrl, timeout, pollInterval, pollTimeout);
+    taskResult = await pollTask(apiKey, fetchUrl, timeout, pollInterval, pollTimeout, retry, retryDelay);
   } catch (error) {
     console.error(`Polling failed: ${error.message}`);
     return 1;
@@ -226,14 +332,15 @@ async function main() {
   console.log(JSON.stringify(taskResult, null, 2));
 
   if (values.download) {
-    const imageUrl = String(taskResult.imageUrl || "").trim();
-    if (!imageUrl) {
-      console.error("Task finished but imageUrl is empty");
-      return 1;
-    }
     try {
-      await downloadFile(imageUrl, values.download, timeout);
-      console.error(`Downloaded image -> ${values.download}`);
+      await downloadTaskImages(
+        taskResult,
+        values.download,
+        values["download-mode"],
+        timeout,
+        retry,
+        retryDelay,
+      );
     } catch (error) {
       console.error(`Download failed: ${error.message}`);
       return 1;

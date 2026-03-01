@@ -21,6 +21,9 @@
 - 手机壁纸和创意探索图
 - 需要 MJ 风格控制参数（`--ar` / `--v` / `--stylize` 等）的任务
 
+先读：
+- `references/common.md`
+
 ## 2. 入口脚本
 
 - `skills/image-generation/scripts/mj_imagine_client.js`
@@ -41,7 +44,10 @@ node skills/image-generation/scripts/mj_imagine_client.js ...
 - `--poll-interval` 可选，轮询间隔秒，默认 `3`
 - `--poll-timeout` 可选，轮询最长秒，默认 `600`
 - `--timeout` 可选，请求超时秒，默认 `120`
+- `--retry` 可选，重试次数，默认 `2`
+- `--retry-delay` 可选，重试基准延迟毫秒，默认 `800`
 - `--download` 可选，下载结果到本地
+- `--download-mode` 可选，`grid` / `single` / `both`，默认 `grid`
 
 ## 4. MJ 参数传递规则
 
@@ -88,18 +94,18 @@ node skills/image-generation/scripts/mj_imagine_client.js \
 
 - 提交后会先输出 submit JSON（含任务 ID）。
 - 轮询模式会继续输出 task JSON。
-- `--download` 默认下载 `imageUrl`（通常是 4 宫格合图）。
-- 如果需要 4 张单图，使用 `imageUrls` 数组中的链接自行下载。
+- `--download-mode grid`：下载 `imageUrl`（通常是 4 宫格合图）。
+- `--download-mode single`：下载 `imageUrls` 里的单图。
+- `--download-mode both`：同时下载宫格图和单图。
+- 多张单图会自动命名为 `xxx_single_1.ext`、`xxx_single_2.ext`。
 
 示例（下载 4 张单图）：
 ```bash
 node skills/image-generation/scripts/mj_imagine_client.js \
   --prompt "手机壁纸，赛博城市夜景 --ar 9:16 --v 7" \
-  --route-prefix fast > output/mj_result.json
-
-jq -r '.imageUrls[].url' output/mj_result.json | nl -v1 | while read i url; do
-  curl -L "$url" -o "output/mj_single_${i}.png"
-done
+  --route-prefix fast \
+  --download "output/mj_result.png" \
+  --download-mode both
 ```
 
 ## 7. 常见错误与排查
@@ -111,7 +117,8 @@ done
 - `Polling timed out`
   - 提高 `--poll-timeout` 或拉大 `--poll-interval`。
 - `Task finished but imageUrl is empty`
-  - 任务完成但结果字段缺失，检查返回 JSON 中 `imageUrls`。
+  - 可改用 `--download-mode single` 从 `imageUrls` 下载。
+- `unexpected argument ... found`（PowerShell 常见）
+  - 提示词含空格时优先使用单引号：`--prompt 'A B C --ar 9:16 --v 7'`。
 - 配置错误
   - 检查 `skills/image-generation/scripts/api_config.json` 中 `api_key`、`base_url`，以及可选 `mj_route_prefix`、`mj_base_url`。
-

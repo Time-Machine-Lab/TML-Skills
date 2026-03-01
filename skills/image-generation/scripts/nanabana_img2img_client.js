@@ -6,7 +6,9 @@ const {
   downloadFile,
   loadApiKey,
   loadConfig,
+  mergePromptWithPositionals,
   normalizeArgvForMultiValueOptions,
+  parseRetryOptions,
   requestJson,
   resolveBaseUrl,
   resolveConfigPath,
@@ -27,27 +29,46 @@ async function main() {
   const configPath = resolveConfigPath(scriptDir);
   const normalizedArgv = normalizeArgvForMultiValueOptions(process.argv.slice(2), ["--image-path"]);
 
-  const { values } = parseArgs({
-    args: normalizedArgv,
-    options: {
-      "image-path": { type: "string", multiple: true },
-      prompt: { type: "string" },
-      model: { type: "string", default: "nano-banana-2-4k" },
-      "aspect-ratio": { type: "string", default: "1:1" },
-      "image-size": { type: "string", default: "1K" },
-      download: { type: "string", default: "" },
-      timeout: { type: "string", default: "120" },
-    },
-    strict: true,
-    allowPositionals: false,
-  });
+  let parsed;
+  try {
+    parsed = parseArgs({
+      args: normalizedArgv,
+      options: {
+        "image-path": { type: "string", multiple: true },
+        prompt: { type: "string" },
+        model: { type: "string", default: "nano-banana-2-4k" },
+        "aspect-ratio": { type: "string", default: "1:1" },
+        "image-size": { type: "string", default: "1K" },
+        download: { type: "string", default: "" },
+        timeout: { type: "string", default: "120" },
+        retry: { type: "string", default: "2" },
+        "retry-delay": { type: "string", default: "800" },
+      },
+      strict: true,
+      allowPositionals: true,
+    });
+  } catch (error) {
+    console.error(`Argument parsing error: ${error.message}`);
+    if (/unexpected argument/i.test(String(error.message || ""))) {
+      console.error("PowerShell tip: use single quotes for prompts with spaces, e.g. --prompt 'A B C'.");
+    }
+    return 2;
+  }
+
+  const { values, positionals } = parsed;
+  const promptResult = mergePromptWithPositionals(values.prompt, positionals);
+  const prompt = promptResult.prompt;
+  if (promptResult.merged) {
+    console.error("Detected extra positional arguments. Auto-merged into --prompt.");
+    console.error("PowerShell tip: use single quotes for prompts with spaces, e.g. --prompt 'A B C'.");
+  }
 
   const imagePaths = getImagePaths(values);
   if (imagePaths.length === 0) {
     console.error("Missing required argument: --image-path");
     return 2;
   }
-  if (!values.prompt) {
+  if (!prompt) {
     console.error("Missing required argument: --prompt");
     return 2;
   }
@@ -61,6 +82,14 @@ async function main() {
     console.error("Invalid --timeout value");
     return 2;
   }
+  let retryOptions;
+  try {
+    retryOptions = parseRetryOptions(values);
+  } catch (error) {
+    console.error(error.message);
+    return 2;
+  }
+  const { retry, retryDelay } = retryOptions;
 
   let apiKey;
   let baseUrl;
@@ -75,7 +104,7 @@ async function main() {
 
   const form = new FormData();
   form.append("model", values.model);
-  form.append("prompt", values.prompt);
+  form.append("prompt", prompt);
   form.append("response_format", "url");
   if (values["aspect-ratio"]) {
     form.append("aspect_ratio", values["aspect-ratio"]);
@@ -100,8 +129,9 @@ async function main() {
 
   const url = `${baseUrl}/v1/images/edits`;
   console.error(`Calling API: ${url}`);
-  console.error(`Prompt: ${values.prompt}`);
+  console.error(`Prompt: ${prompt}`);
   console.error(`Images: ${imagePaths.join(", ")}`);
+  console.error("Generating image... please wait.");
 
   let result;
   try {
@@ -111,6 +141,8 @@ async function main() {
       apiKey,
       body: form,
       timeoutSeconds: timeout,
+      maxRetries: retry,
+      retryDelayMs: retryDelay,
       extraHeaders: {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
       },
@@ -130,7 +162,7 @@ async function main() {
       return 1;
     }
     try {
-      await downloadFile(imageUrl, values.download, timeout);
+      await downloadFile(imageUrl, values.download, timeout, retry, retryDelay);
       console.error(`Downloaded image -> ${values.download}`);
     } catch (error) {
       console.error(`Download failed: ${error.message}`);
