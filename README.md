@@ -35,17 +35,7 @@ Unlike generic prompts, these skills are engineered with **industry best practic
 
 ## 📦 Skills Gallery
 
-### 🌊 [Xiaohongshu Niche Wallpaper](.trae/skills/xiaohongshu-niche-wallpaper/SKILL.md)
-> *The viral content generator for niche aesthetics.*
-
-- **Role**: Aesthetic Curator & Copywriter
-- **Capabilities**:
-  - Generates "Clickbait" titles based on 4 viral formulas.
-  - Writes "High-End" niche copy (Cyberpunk, Bauhaus, Vaporwave).
-  - Auto-selects traffic-driving hashtags.
-- **Trigger**: "Help me write a wallpaper post about [Topic]"
-
-*(More skills coming soon...)*
+Please check out our full [Skills Catalog](./skills/README.md) for a complete list of available skills and their documentation.
 
 ## 🚀 Quick Start
 
