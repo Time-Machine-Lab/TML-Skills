@@ -3,6 +3,7 @@
 .vscode/
 .trae/
 .image/
+.cursor/
 
 package-lock.json
 package.json
