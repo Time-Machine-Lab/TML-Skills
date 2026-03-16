@@ -1,0 +1,68 @@
+---
+name: ragflow-knowledge
+description: 与 RAGFlow 知识库交互（检索/搜索 和 保存/上传）。当用户希望查询知识库或保存内容到知识库时使用。
+---
+
+# RAGFlow 知识库技能
+
+本技能允许 Agent 与 RAGFlow 知识库进行交互。支持以下功能：
+1.  **读取知识**：从知识库中检索信息以回答问题或填充上下文。
+2.  **存储知识**：将内容（文本或文件）保存到知识库以供将来检索。
+
+## 前置条件
+
+使用此技能前，请确保已设置或提供以下环境变量：
+
+- `RAGFLOW_BASE_URL`: RAGFlow 实例的基础 URL（例如 `http://localhost:9380` 或 `https://demo.ragflow.io`）。
+- `RAGFLOW_API_KEY`: 您的 RAGFlow API Key。
+- `RAGFLOW_DATASET_ID`: （可选）保存知识的目标数据集 ID。如果未提供，技能将尝试查找默认数据集或提示您创建一个。
+- `RAGFLOW_CHAT_ID`: （可选）用于检索的聊天助手 ID。如果未提供，检索可能需要创建一个新的聊天会话。
+
+## 使用方法
+
+### 1. 配置检查
+
+首先运行此步骤以验证连接和配置。
+
+```bash
+python3 skills/ragflow-knowledge/scripts/check_config.py
+```
+
+如果缺少配置，脚本将提示输入。您需要提供 `RAGFLOW_BASE_URL` 和 `RAGFLOW_API_KEY`。
+
+### 2. 读取知识（检索）
+
+当用户提出的问题可能需要知识库中的信息来回答，或者需要内部文档的上下文时使用。
+
+```bash
+python3 skills/ragflow-knowledge/scripts/retrieve_knowledge.py --query "您的问题" [--chat_id "可选的聊天ID"]
+```
+
+- **Query**: 要搜索的问题或主题。
+- **Chat ID**: （可选）使用的特定聊天 ID。
+
+### 3. 存储知识（保存）
+
+当用户明确要求将内容（文本、代码或文件）保存到知识库时使用。
+
+```bash
+python3 skills/ragflow-knowledge/scripts/save_knowledge.py --content "要保存的内容" [--file_path "/文件/路径"] [--dataset_name "我的知识库"]
+```
+
+- **Content**: 直接保存的文本内容。
+- **File Path**: 要上传的本地文件路径。
+- **Dataset Name**: （可选）保存到的数据集名称。默认为 "TraeKnowledge"。
+
+## 脚本详情
+
+### `check_config.py`
+验证与 RAGFlow 的连接并列出可用的数据集/聊天。这有助于确保环境准备就绪。
+
+### `retrieve_knowledge.py`
+向 RAGFlow Chat API 发送查询并返回答案/上下文。
+
+### `save_knowledge.py`
+1.  检查目标数据集是否存在；如果不存在则创建。
+2.  将内容/文件上传为文档。
+3.  触发文档解析（激活）。
+4.  返回状态（成功、文档 ID、解析状态）。
