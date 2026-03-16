@@ -64,8 +64,8 @@ python3 skills/ragflow-knowledge/scripts/list_datasets.py
 python3 skills/ragflow-knowledge/scripts/save_knowledge.py --content "要保存的内容" [--file_path "/文件/路径"] [--dataset_name "目标知识库名称"]
 ```
 
-- **Content**: 直接保存的文本内容。
-- **File Path**: 要上传的本地文件路径。
+- **Content**: 直接保存的文本内容（如果不使用文件上传）。
+- **File Path**: 要上传的本地文件路径。**重要要求**：当用户要求上传或保存已存在的文件时，Agent **必须原封不动**地使用此参数将源文件上传，**绝对禁止**擅自读取文件内容并将其转换为纯文本或新文件后再上传，这会导致原有格式（如 Markdown、PDF 的结构、图片、表格）丢失！
 - **Dataset Name**: （可选）保存到的数据集名称。如果不指定，脚本将尝试使用默认值或创建新库。
 
 ## 脚本详情

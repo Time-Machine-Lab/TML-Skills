@@ -133,20 +133,26 @@ def save_knowledge():
                         
                         # 3. Trigger Parsing (Run)
                         print("Triggering parsing...")
-                        run_payload = {"run": 1, "progress": 0} 
-                        run_response = requests.put(f"{full_url}/datasets/{dataset_id}/documents/{doc_id}", headers=headers, json=run_payload)
+                        # Correcting the trigger logic based on RAGFlow API
+                        # POST /api/v1/datasets/{dataset_id}/documents/run
+                        run_payload = {"ids": [doc_id], "run": 1}
+                        run_response = requests.post(f"{full_url}/datasets/{dataset_id}/documents/run", headers=headers, json=run_payload)
                         
                         run_status = "Unknown"
-                        if run_response.status_code == 200 and run_response.json().get("code") == 0:
-                             run_status = "Started"
-                        else:
-                             # Try bulk run endpoint fallback
-                             bulk_run_payload = {"ids": [doc_id], "run": 1}
-                             bulk_response = requests.post(f"{full_url}/datasets/{dataset_id}/documents/run", headers=headers, json=bulk_run_payload)
-                             if bulk_response.status_code == 200 and bulk_response.json().get("code") == 0:
-                                 run_status = "Started (Bulk)"
+                        if run_response.status_code == 200:
+                             res_json = run_response.json()
+                             if res_json.get("code") == 0:
+                                 run_status = "Started"
                              else:
-                                 run_status = f"Failed to trigger ({run_response.status_code})"
+                                 run_status = f"Failed ({res_json.get('message')})"
+                        else:
+                             # Try fallback to PUT if POST fails (older API versions)
+                             fallback_payload = {"run": 1}
+                             fallback_res = requests.put(f"{full_url}/datasets/{dataset_id}/documents/{doc_id}", headers=headers, json=fallback_payload)
+                             if fallback_res.status_code == 200 and fallback_res.json().get("code") == 0:
+                                 run_status = "Started (Fallback PUT)"
+                             else:
+                                 run_status = f"Failed (POST:{run_response.status_code}, PUT:{fallback_res.status_code})"
 
                         # Return details
                         print(f"\n--- Save Complete ---")
