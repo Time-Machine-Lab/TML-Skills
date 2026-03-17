@@ -1,0 +1,3 @@
+interface:
+  display_name: "AI Task Constitution"
+  short_description: "Reduce AI alignment loops with constitution-first planning"

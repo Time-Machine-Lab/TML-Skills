@@ -1,0 +1,3 @@
+interface:
+  display_name: "Subagent Supervisor Constitution"
+  short_description: "Coordinate subagents with constitution-first verification gates"
