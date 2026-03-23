@@ -1,0 +1,4 @@
+interface:
+  display_name: "Spec Subagent Orchestrator"
+  short_description: "Route specs and subagents safely."
+  default_prompt: "Use this skill to route complex work through the right spec-kit stage and the right subagent workflow before execution."
