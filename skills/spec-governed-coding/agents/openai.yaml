@@ -1,0 +1,4 @@
+interface:
+  display_name: "Spec Governed Coding"
+  short_description: "Govern coding delivery with spec and subagents."
+  default_prompt: "Use this skill to run a coding task through spec artifacts, governed subagent execution, and lightweight delivery logs."

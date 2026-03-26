@@ -73,3 +73,45 @@ Return only:
 5) open risks
 No commit.
 ```
+
+## Privacy-Safe Self-Evolution Loop
+Use this loop after each medium/high-risk task to gain compounding improvements without leaking sensitive data.
+
+### Step 1: Local Raw Delta (private only)
+Append one record to `improvement_log.local.md`:
+1. high-cost alignment issue
+2. failed instruction pattern
+3. what fixed it
+4. risk impact (time/rework)
+
+Never copy this file to shared repos.
+Treat it as a local, untracked note rather than a published bundle asset.
+
+### Step 2: Redact to Pattern Card
+Convert raw record into a sanitized pattern card in `promote_candidate.md`:
+1. problem type (generic)
+2. trigger signal (generic)
+3. reusable rule text
+4. expected effect
+
+Remove names, project IDs, file paths, customer/business identifiers, URLs, and sample data.
+
+### Step 3: Promotion Threshold
+Promote to skill update only if:
+1. same pattern appears >= 3 times, or
+2. one incident caused major rework.
+
+Allowed edit zones:
+1. `Dispatch Protocol`
+2. `Verification Gates`
+3. `Failure Patterns and Fixes`
+
+### Step 4: Validate Before Publish
+After updating SKILL:
+1. run `quick_validate.py`
+2. run one dry-run dispatch check
+3. create one short changelog entry in `changelog.md`
+
+### Step 5: Team Sync (optional)
+Only sync sanitized updates to team repo (for example `tml-skill`).
+Do not sync local raw logs.

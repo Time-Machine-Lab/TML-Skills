@@ -1,0 +1,35 @@
+{
+  "bundle_name": "spec-governed-coding-bundle",
+  "version": "0.1.0",
+  "entry_skill": "spec-governed-coding",
+  "install_mode": "copy-directories",
+  "skills": [
+    "spec-governed-coding",
+    "spec-subagent-orchestrator",
+    "subagent-supervisor-constitution",
+    "subagent-driven-development",
+    "using-git-worktrees",
+    "writing-plans",
+    "requesting-code-review",
+    "finishing-a-development-branch",
+    "test-driven-development",
+    "executing-plans",
+    "code-reviewer"
+  ],
+  "required_assets": [
+    "spec-governed-coding/scripts/bootstrap_governance_baseline.py",
+    "spec-governed-coding/references/bootstrap-baseline.md",
+    "spec-governed-coding/references/governance-layout.md",
+    "spec-governed-coding/references/run-log-policy.md",
+    "spec-governed-coding/references/state-discovery.md",
+    "spec-governed-coding/references/templates/delivery-constitution.md",
+    "spec-governed-coding/references/templates/delivery-protocol.md",
+    "spec-governed-coding/references/templates/executor-profile-catalog.md",
+    "spec-governed-coding/references/templates/run-log-template.md"
+  ],
+  "supported_targets": {
+    "codex": ".codex/skills",
+    "trae": ".trae/skills",
+    "claude-code": ".claude/skills"
+  }
+}
