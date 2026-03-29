@@ -1,10 +1,13 @@
 {
   "bundle_name": "spec-governed-coding-bundle",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "entry_skill": "spec-governed-coding",
-  "install_mode": "copy-directories",
+  "install_mode": "copy-entry-skill-with-embedded-dependencies",
   "skills": [
-    "spec-governed-coding",
+    "spec-governed-coding"
+  ],
+  "dependency_root": "skill-dependencies",
+  "embedded_skill_dependencies": [
     "spec-subagent-orchestrator",
     "subagent-supervisor-constitution",
     "subagent-driven-development",
@@ -18,6 +21,7 @@
   ],
   "required_assets": [
     "spec-governed-coding/scripts/bootstrap_governance_baseline.py",
+    "spec-governed-coding/scripts/self_check_install.py",
     "spec-governed-coding/references/bootstrap-baseline.md",
     "spec-governed-coding/references/governance-layout.md",
     "spec-governed-coding/references/run-log-policy.md",
@@ -25,7 +29,8 @@
     "spec-governed-coding/references/templates/delivery-constitution.md",
     "spec-governed-coding/references/templates/delivery-protocol.md",
     "spec-governed-coding/references/templates/executor-profile-catalog.md",
-    "spec-governed-coding/references/templates/run-log-template.md"
+    "spec-governed-coding/references/templates/run-log-template.md",
+    "spec-governed-coding/skill-dependencies"
   ],
   "supported_targets": {
     "codex": ".codex/skills",

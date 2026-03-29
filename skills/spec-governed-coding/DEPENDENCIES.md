@@ -1,8 +1,10 @@
 # Dependencies
 
-This bundle is intended to be installed as a complete governed-delivery stack.
+`spec-governed-coding` is now the only top-level entry skill in this bundle.
 
-## Required for the published bundle
+## Embedded companion skills
+
+These companion skills live under `skill-dependencies/` and should not be published as peer directories in the TML root skill catalog:
 
 - `spec-subagent-orchestrator`
 - `subagent-supervisor-constitution`
@@ -18,6 +20,7 @@ This bundle is intended to be installed as a complete governed-delivery stack.
 ## Bundled assets that must travel with `spec-governed-coding`
 
 - `scripts/bootstrap_governance_baseline.py`
+- `scripts/self_check_install.py`
 - `references/bootstrap-baseline.md`
 - `references/governance-layout.md`
 - `references/run-log-policy.md`
@@ -27,7 +30,14 @@ This bundle is intended to be installed as a complete governed-delivery stack.
 - `references/templates/executor-profile-catalog.md`
 - `references/templates/run-log-template.md`
 - `agents/openai.yaml`
+- `skill-dependencies/`
 
 ## Packaging rule
 
-Do not publish `spec-governed-coding` alone. Publish the full set above so installation stays deterministic and the workflow never has to fall back to missing-skill behavior.
+Publish and install only the `spec-governed-coding` directory.
+
+The entry skill is responsible for:
+
+- self-checking whether companion skills are already available in the searchable skill namespace
+- dynamically installing missing companion skills from `skill-dependencies/`
+- keeping the TML top-level `skills/` directory limited to directly invoked atomic skills

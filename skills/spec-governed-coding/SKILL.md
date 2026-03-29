@@ -10,10 +10,10 @@ description: Run coding tasks through a governed spec-first workflow that combin
 Use this as the top-level skill for coding delivery. It combines:
 
 - spec-kit for task-definition artifacts
-- `spec-subagent-orchestrator` for routing and atomic slice decisions
+- embedded companion skills for routing, execution, review, and closeout
 - lightweight governance files for repeatable execution and post-task reflection
 
-This skill does not replace spec-kit or `spec-subagent-orchestrator`. It wraps them in a stable delivery model that can be reused across coding tasks.
+This skill does not replace spec-kit or its companion execution skills. It wraps them in a stable delivery model that can be reused across coding tasks.
 
 Default expectation: a user should be able to say `use /spec-governed-coding to complete this task` and let the skill discover the current state instead of dictating the whole protocol by hand.
 
@@ -93,12 +93,17 @@ Default bias:
 
 On activation, do this automatically:
 
-1. Identify the active workspace or repo.
-2. Discover the current task-definition artifact chain.
+1. Self-check embedded dependencies.
+   Verify the companion skills listed in `manifest.json` are available in the searchable skill namespace.
+   If any are missing or incomplete, run:
+   `python <installed-skill-root>/scripts/self_check_install.py`
+   using the copies in `<installed-skill-root>/skill-dependencies/`.
+2. Identify the active workspace or repo.
+3. Discover the current task-definition artifact chain.
    Search for the most relevant `spec.md`, `plan.md`, and `tasks.md` near the active work area before asking the user to restate status.
-3. Discover the governance baseline.
+4. Discover the governance baseline.
    Look for standing governance files under `docs/governance/`.
-4. If the governance baseline is missing, bootstrap it automatically from this skill's templates.
+5. If the governance baseline is missing, bootstrap it automatically from this skill's templates.
    Run:
    `python3 <installed-skill-root>/scripts/bootstrap_governance_baseline.py --workspace <workspace-root>`
    Then verify the workspace now has:
@@ -107,12 +112,12 @@ On activation, do this automatically:
    - `docs/governance/executor-profile-catalog.md`
    - `docs/governance/run-log-template.md`
    Treat this as workspace setup, not as a governance gap.
-5. Classify the current stage.
+6. Classify the current stage.
    Decide whether the task is still in definition, planning, execution, review, or closeout.
-6. Choose the next route.
+7. Choose the next route.
    If artifacts are incomplete, repair the missing layer.
    If execution is ready, route through `spec-subagent-orchestrator`.
-7. Explain only the essential next step.
+8. Explain only the essential next step.
    Do not require the user to restate slice, logging, or delegation policy unless the workspace is genuinely ambiguous.
 
 Read [state-discovery.md](references/state-discovery.md) when the current stage or workspace layout is unclear.
@@ -263,16 +268,18 @@ Deliver a verified, high-quality result at the lowest practical cost.
 ## How This Skill Uses Other Skills
 
 - Use spec-kit commands or artifacts to define the work.
+- Self-check and install embedded companion skills from `skill-dependencies/` before routing.
 - Use `spec-subagent-orchestrator` to choose the next execution mode and define atomic slices.
 - Use `docs/governance/executor-profile-catalog.md` to choose the narrowest matching executor profile for any delegated slice.
-- Use existing subagent skills only after routing says they are the right fit.
+- Use companion skills only after routing says they are the right fit.
 
 ## Packaging Notes
 
-This published version is designed to travel as part of a bundle.
+This published version is designed to travel as one self-contained entry skill.
 
 - Keep this directory together with its `scripts/`, `references/`, and `agents/` subdirectories.
-- Install the companion skills named in `DEPENDENCIES.md` into the same searchable skill namespace.
+- Keep `skill-dependencies/` inside this directory so the self-check installer can repair missing companion skills.
+- Do not publish the companion skills as peer directories in the TML top-level `skills/` catalog.
 - Resolve `<installed-skill-root>` to the directory that contains this `SKILL.md`.
 - Do not rewrite the workflow for a target IDE; only adapt installation paths and invocation syntax as needed.
 

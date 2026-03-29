@@ -38,3 +38,15 @@ Keep entries short and evidence-driven.
 - skill change:
   - required `delegation blocker` in dispatch output whenever staying local
   - added examples of acceptable and unacceptable blocker phrases
+
+## 2026-03-29 - Embed companion skills and add self-check install
+
+- source run logs:
+  - none
+- observed pattern:
+  - the TML top-level skill catalog was exposing bundle-internal companion skills that users do not invoke directly
+  - installing the bundle required flattening multiple support skills into the root namespace by hand
+- skill change:
+  - moved companion skills under `spec-governed-coding/skill-dependencies/`
+  - added `scripts/self_check_install.py` to verify and dynamically install missing companion skills
+  - updated bundle docs and manifest so `spec-governed-coding` is installed as a single self-contained entry skill
