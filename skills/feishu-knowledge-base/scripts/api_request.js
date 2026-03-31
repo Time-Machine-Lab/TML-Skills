@@ -20,6 +20,8 @@ function readCredentials() {
 function request(urlStr, options, data = null) {
     return new Promise((resolve, reject) => {
         const req = https.request(urlStr, options, (res) => {
+            // Ensure response is treated as UTF-8
+            res.setEncoding('utf8');
             let body = '';
             res.on('data', chunk => body += chunk);
             res.on('end', () => {
@@ -33,7 +35,11 @@ function request(urlStr, options, data = null) {
         });
         req.on('error', reject);
         if (data) {
-            req.write(JSON.stringify(data));
+            // Buffer.from is used to ensure the length is calculated correctly in bytes, 
+            // but for writing to req, JSON string is fine as long as encoding is utf8.
+            const payload = JSON.stringify(data);
+            req.setHeader('Content-Length', Buffer.byteLength(payload, 'utf8'));
+            req.write(payload, 'utf8');
         }
         req.end();
     });
@@ -203,6 +209,19 @@ Example:
                 }
             } catch (e) {
                 // Ignore cache update errors silently
+            }
+        }
+
+        // 拦截并处理权限不足的错误
+        if (res && res.code !== undefined && res.code !== 0) {
+            // 常见的权限错误码: 
+            // 131006 / 400131006 / 131004 (invalid user) / 20010002 (网络异常但有时是越权) 等
+            const permissionErrors = [131006, 400131006, 131004, 400131004];
+            if (permissionErrors.includes(res.code) || String(res.msg).toLowerCase().includes('permission')) {
+                console.log(JSON.stringify(res, null, 2));
+                console.error('\n⚠️ [Permission Denied] 抱歉，当前用户没有足够的权限执行此操作（或目标资源不存在/不可见）。');
+                console.error('👉 Agent 指令：请直接向用户转达“当前无权限执行此操作”，无需尝试重试或其他绕过手段。');
+                return;
             }
         }
 

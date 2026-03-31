@@ -241,6 +241,34 @@
       "space_id": "7623030105442487260",
       "space_type": "team",
       "visibility": "private"
+    },
+    {
+      "description": "?????????",
+      "name": "????",
+      "space_id": "7623392712011582412",
+      "space_type": "team",
+      "visibility": "private"
+    },
+    {
+      "description": "?????????",
+      "name": "????",
+      "space_id": "7623392883135974353",
+      "space_type": "team",
+      "visibility": "private"
+    },
+    {
+      "description": "测试创建的知识空间",
+      "name": "试试小妹",
+      "space_id": "7623392922997672904",
+      "space_type": "team",
+      "visibility": "private"
+    },
+    {
+      "description": "测试描述",
+      "name": "测试中文乱码",
+      "space_id": "7623393301878361018",
+      "space_type": "team",
+      "visibility": "private"
     }
   ]
 }
