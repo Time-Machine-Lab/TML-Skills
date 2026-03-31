@@ -1,0 +1,274 @@
+{
+  "childrenMap": {
+    "7622514694942657476": {
+      "": [
+        {
+          "creator": "ou_21c47ae7506bc2d5d183b3133bbdf782",
+          "has_child": false,
+          "node_create_time": "1774755003",
+          "node_token": "IqgKwaD53ibeWUkLtFUcRGrjnPW",
+          "node_type": "origin",
+          "obj_create_time": "1774755003",
+          "obj_edit_time": "1774755003",
+          "obj_token": "AYBQdT7z2oYHaLxeelrcE6jgneh",
+          "obj_type": "docx",
+          "origin_node_token": "IqgKwaD53ibeWUkLtFUcRGrjnPW",
+          "origin_space_id": "7622514694942657476",
+          "owner": "ou_21c47ae7506bc2d5d183b3133bbdf782",
+          "parent_node_token": "",
+          "space_id": "7622514694942657476",
+          "title": "首页"
+        },
+        {
+          "creator": "ou_21c47ae7506bc2d5d183b3133bbdf782",
+          "has_child": false,
+          "node_create_time": "1774785348",
+          "node_token": "QIp8wO4lIikDECkJRgxcTvZ8njg",
+          "node_type": "origin",
+          "obj_create_time": "1774785348",
+          "obj_edit_time": "1774878255",
+          "obj_token": "NexWdgFdNomiI6x9PNbc4kNhnhe",
+          "obj_type": "docx",
+          "origin_node_token": "QIp8wO4lIikDECkJRgxcTvZ8njg",
+          "origin_space_id": "7622514694942657476",
+          "owner": "ou_21c47ae7506bc2d5d183b3133bbdf782",
+          "parent_node_token": "",
+          "space_id": "7622514694942657476",
+          "title": "斯巴拉西"
+        },
+        {
+          "creator": "ou_21c47ae7506bc2d5d183b3133bbdf782",
+          "has_child": false,
+          "node_create_time": "1774876687",
+          "node_token": "UB73whemOi6mDbkNMXYcrOxhnCb",
+          "node_type": "origin",
+          "obj_create_time": "1774876687",
+          "obj_edit_time": "1774877695",
+          "obj_token": "WICNd8LBzoBui9x6qlsckxYAnVp",
+          "obj_type": "docx",
+          "origin_node_token": "UB73whemOi6mDbkNMXYcrOxhnCb",
+          "origin_space_id": "7622514694942657476",
+          "owner": "ou_21c47ae7506bc2d5d183b3133bbdf782",
+          "parent_node_token": "",
+          "space_id": "7622514694942657476",
+          "title": "README_CN"
+        }
+      ],
+      "Di6UwoUL1iWep1k5uUocTdMVnqe": [
+        {
+          "creator": "",
+          "has_child": false,
+          "node_create_time": "1774875601",
+          "node_token": "HAH6wdPpiiSdM6kGlsicDXDZnWc",
+          "node_type": "origin",
+          "obj_create_time": "1774875601",
+          "obj_edit_time": "1774875601",
+          "obj_token": "OhbodzptDo7nVwxim68catKmnpf",
+          "obj_type": "docx",
+          "origin_node_token": "HAH6wdPpiiSdM6kGlsicDXDZnWc",
+          "origin_space_id": "7622514694942657476",
+          "owner": "ou_21c47ae7506bc2d5d183b3133bbdf782",
+          "parent_node_token": "Di6UwoUL1iWep1k5uUocTdMVnqe",
+          "space_id": "7622514694942657476",
+          "title": "README_CN"
+        },
+        {
+          "creator": "",
+          "has_child": false,
+          "node_create_time": "1774876687",
+          "node_token": "UB73whemOi6mDbkNMXYcrOxhnCb",
+          "node_type": "origin",
+          "obj_create_time": "1774876687",
+          "obj_edit_time": "1774876687",
+          "obj_token": "WICNd8LBzoBui9x6qlsckxYAnVp",
+          "obj_type": "docx",
+          "origin_node_token": "UB73whemOi6mDbkNMXYcrOxhnCb",
+          "origin_space_id": "7622514694942657476",
+          "owner": "ou_21c47ae7506bc2d5d183b3133bbdf782",
+          "parent_node_token": "Di6UwoUL1iWep1k5uUocTdMVnqe",
+          "space_id": "7622514694942657476",
+          "title": "README_CN"
+        }
+      ]
+    },
+    "7620368646577621955": {
+      "": [
+        {
+          "creator": "ou_ceed1ca85a5165eb31ba3830fe286e72",
+          "has_child": false,
+          "node_create_time": "1774255337",
+          "node_token": "J2yhwgegwiN0eFku6EaczH4BnXf",
+          "node_type": "origin",
+          "obj_create_time": "1774255337",
+          "obj_edit_time": "1774260635",
+          "obj_token": "TshvdlcZKo4ec9xSw0OcOjIanub",
+          "obj_type": "docx",
+          "origin_node_token": "J2yhwgegwiN0eFku6EaczH4BnXf",
+          "origin_space_id": "7620368646577621955",
+          "owner": "ou_ceed1ca85a5165eb31ba3830fe286e72",
+          "parent_node_token": "",
+          "space_id": "7620368646577621955",
+          "title": "首页"
+        },
+        {
+          "creator": "ou_ceed1ca85a5165eb31ba3830fe286e72",
+          "has_child": false,
+          "node_create_time": "1774433769",
+          "node_token": "NSG5wf8rdiUZ3Qk2EjYcOJq9nSg",
+          "node_type": "origin",
+          "obj_create_time": "1774433769",
+          "obj_edit_time": "1774447304",
+          "obj_token": "IW4gd58VSoEw5Nx6u3rcdJiWnod",
+          "obj_type": "docx",
+          "origin_node_token": "NSG5wf8rdiUZ3Qk2EjYcOJq9nSg",
+          "origin_space_id": "7620368646577621955",
+          "owner": "ou_ceed1ca85a5165eb31ba3830fe286e72",
+          "parent_node_token": "",
+          "space_id": "7620368646577621955",
+          "title": "待办清单"
+        }
+      ]
+    },
+    "7302104702932500481": {
+      "": [
+        {
+          "creator": "ou_ceed1ca85a5165eb31ba3830fe286e72",
+          "has_child": false,
+          "node_create_time": "1700153738",
+          "node_token": "FrJgwEk2CiV4TekCicXcX1j0nuc",
+          "node_type": "origin",
+          "obj_create_time": "1700153738",
+          "obj_edit_time": "1700153738",
+          "obj_token": "QgHed1aFAopatWxqwSrcjJKYn1e",
+          "obj_type": "docx",
+          "origin_node_token": "FrJgwEk2CiV4TekCicXcX1j0nuc",
+          "origin_space_id": "7302104702932500481",
+          "owner": "ou_ceed1ca85a5165eb31ba3830fe286e72",
+          "parent_node_token": "",
+          "space_id": "7302104702932500481",
+          "title": "欢迎使用知识库 / Welcome to Wiki"
+        },
+        {
+          "creator": "ou_ceed1ca85a5165eb31ba3830fe286e72",
+          "has_child": true,
+          "node_create_time": "1700153738",
+          "node_token": "IuOrw88c1i1zs2kFYjrc0i8TnHb",
+          "node_type": "origin",
+          "obj_create_time": "1700153738",
+          "obj_edit_time": "1700153739",
+          "obj_token": "RNeZdlAHCoa7jUxkfPrc2XUsn9c",
+          "obj_type": "docx",
+          "origin_node_token": "IuOrw88c1i1zs2kFYjrc0i8TnHb",
+          "origin_space_id": "7302104702932500481",
+          "owner": "ou_ceed1ca85a5165eb31ba3830fe286e72",
+          "parent_node_token": "",
+          "space_id": "7302104702932500481",
+          "title": "管理员手册 / Administrator Manual"
+        },
+        {
+          "creator": "ou_ceed1ca85a5165eb31ba3830fe286e72",
+          "has_child": true,
+          "node_create_time": "1700153738",
+          "node_token": "FyCQwbVKmiG6n3kU7WWcWNzlnNc",
+          "node_type": "origin",
+          "obj_create_time": "1700153738",
+          "obj_edit_time": "1700153738",
+          "obj_token": "OZ6sdRSXto0rcdx4WNqcWsKunpc",
+          "obj_type": "docx",
+          "origin_node_token": "FyCQwbVKmiG6n3kU7WWcWNzlnNc",
+          "origin_space_id": "7302104702932500481",
+          "owner": "ou_ceed1ca85a5165eb31ba3830fe286e72",
+          "parent_node_token": "",
+          "space_id": "7302104702932500481",
+          "title": "成员手册 / Member Manual"
+        }
+      ]
+    }
+  },
+  "spaces": [
+    {
+      "description": "?????",
+      "name": "?????",
+      "open_sharing": "closed",
+      "space_id": "7622561127011978197",
+      "space_type": "team",
+      "visibility": "private"
+    },
+    {
+      "description": "",
+      "name": "test",
+      "open_sharing": "closed",
+      "space_id": "7622514694942657476",
+      "space_type": "team",
+      "visibility": "public"
+    },
+    {
+      "description": "",
+      "name": "头脑风暴",
+      "open_sharing": "closed",
+      "space_id": "7620368646577621955",
+      "space_type": "team",
+      "visibility": "public"
+    },
+    {
+      "description": "",
+      "name": "示例知识库 / Wiki samples",
+      "open_sharing": "closed",
+      "space_id": "7302104702932500481",
+      "space_type": "team",
+      "visibility": "public"
+    },
+    {
+      "description": "?????-??",
+      "name": "?????-??",
+      "open_sharing": "closed",
+      "space_id": "7622561719348431826",
+      "space_type": "team",
+      "visibility": "private"
+    },
+    {
+      "description": "",
+      "name": "?????",
+      "open_sharing": "closed",
+      "space_id": "7622633807421672629",
+      "space_type": "team",
+      "visibility": "private"
+    },
+    {
+      "description": "用于测试自动缓存更新机制",
+      "name": "测试创建空间",
+      "open_sharing": "closed",
+      "space_id": "7623030105442487260",
+      "space_type": "team",
+      "visibility": "private"
+    },
+    {
+      "description": "?????????",
+      "name": "????",
+      "space_id": "7623392712011582412",
+      "space_type": "team",
+      "visibility": "private"
+    },
+    {
+      "description": "?????????",
+      "name": "????",
+      "space_id": "7623392883135974353",
+      "space_type": "team",
+      "visibility": "private"
+    },
+    {
+      "description": "测试创建的知识空间",
+      "name": "试试小妹",
+      "space_id": "7623392922997672904",
+      "space_type": "team",
+      "visibility": "private"
+    },
+    {
+      "description": "测试描述",
+      "name": "测试中文乱码",
+      "space_id": "7623393301878361018",
+      "space_type": "team",
+      "visibility": "private"
+    }
+  ]
+}
