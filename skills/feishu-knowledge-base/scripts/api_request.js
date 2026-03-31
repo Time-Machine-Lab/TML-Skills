@@ -67,7 +67,7 @@ async function main() {
     if (args.length < 2) {
         console.log(`
 Usage: node scripts/api_request.js <METHOD> <URL> [JSON_BODY_STRING]
-   Or: echo '{"key":"value"}' | node scripts/api_request.js <METHOD> <URL>
+   Or: node scripts/api_request.js <METHOD> <URL> --base64 <BASE64_ENCODED_JSON>
 
 Description:
   A generic API requester that automatically injects the access_token from credentials.yaml.
@@ -76,7 +76,7 @@ Description:
 Example:
   node scripts/api_request.js GET "https://open.feishu.cn/open-apis/docx/v1/documents/doc_xxx"
   node scripts/api_request.js POST "https://open.feishu.cn/open-apis/docx/v1/documents/doc_xxx/blocks" '{"children":[]}'
-  cat data.json | node scripts/api_request.js POST "https://open.feishu.cn/open-apis/docx/v1/documents/doc_xxx/blocks"
+  node scripts/api_request.js POST "https://open.feishu.cn/open-apis/docx/v1/documents/doc_xxx/blocks" --base64 eyJjaGlsZHJlbiI6W119
 `);
         process.exit(1);
     }
@@ -84,8 +84,11 @@ Example:
     const method = args[0].toUpperCase();
     const url = args[1];
 
-    // If bodyStr is empty from stdin, try to get it from args
-    if (!bodyStr && args[2]) {
+    // Check for base64 encoded body
+    if (args[2] === '--base64' && args[3]) {
+        bodyStr = Buffer.from(args[3], 'base64').toString('utf-8');
+    } else if (!bodyStr && args[2]) {
+        // If bodyStr is empty from stdin and not base64, try to get it from args
         bodyStr = args[2];
     }
 

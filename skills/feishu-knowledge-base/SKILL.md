@@ -66,15 +66,15 @@ node scripts/auth.js refresh
     ```
 
 ### 4.2 基础 API 操作清单
-> **重要指令（禁止创建临时文件）**：
-> 在调用这些基础 API 时，**绝对禁止**通过编写临时的 `.js`、`.py`、`.json` 等脚本或数据文件来进行网络请求或存储请求体（因为这会导致在根目录下创建多余文件，严重影响用户体验）。
-> 请**一律使用内置的通用请求工具**发起调用。如果请求体 JSON 数据较长，请使用标准输入管道（stdin）或单行字符串传递：
-> ```bash
-> # 方式一：直接传递 JSON 字符串
-> node scripts/api_request.js <METHOD> "<URL>" '{"key":"value"}'
+> **重要指令（绝对禁止创建临时文件）**：
+> 在调用这些基础 API 时，**绝对禁止**通过编写临时的 `.js`、`.py`、`.json` 等脚本或数据文件来进行网络请求或存储请求体（因为这会导致在用户工作区创建多余文件并频繁删除，严重影响用户体验。**即使是 `.cache` 目录也不允许创建临时请求文件**）。
+> 请**一律使用内置的通用请求工具**发起调用。如果请求体 JSON 数据较长或包含中文字符，为了避免命令行引号转义和乱码问题，请**使用 Base64 编码**传递：
+> ```powershell
+> # 方式一：直接传递 JSON 字符串（仅适用于极短、无特殊字符和中文的 JSON）
+> node scripts/api_request.js <METHOD> "<URL>" "{\`"key\`":\`"value\`"}"
 > 
-> # 方式二：对于较长或包含复杂转义的 JSON，通过管道传递
-> echo '{"key":"value"}' | node scripts/api_request.js <METHOD> "<URL>"
+> # 方式二：使用 Base64 编码传递（强烈推荐，适用于长 JSON 或包含中文字符，完美避免编码、转义及并发问题，零文件痕迹）
+> $jsonStr = '{"key":"包含中文的复杂内容"}'; $base64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($jsonStr)); node scripts/api_request.js <METHOD> "<URL>" --base64 $base64
 > ```
 > 例如：`node scripts/api_request.js GET "https://open.feishu.cn/open-apis/wiki/v2/spaces"`
 
