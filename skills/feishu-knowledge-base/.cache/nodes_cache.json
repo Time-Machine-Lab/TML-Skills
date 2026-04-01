@@ -183,6 +183,220 @@
           "title": "成员手册 / Member Manual"
         }
       ]
+    },
+    "7623467169245858747": {
+      "": [
+        {
+          "creator": "ou_ceed1ca85a5165eb31ba3830fe286e72",
+          "has_child": false,
+          "node_create_time": "1774976768",
+          "node_token": "Ngv6wKpWbiqMkikJWaSc3fvdnic",
+          "node_type": "origin",
+          "obj_create_time": "1774976768",
+          "obj_edit_time": "1774976768",
+          "obj_token": "EaxidzCIdoM4ehxT7VscgKu5n2h",
+          "obj_type": "docx",
+          "origin_node_token": "Ngv6wKpWbiqMkikJWaSc3fvdnic",
+          "origin_space_id": "7623467169245858747",
+          "owner": "ou_ceed1ca85a5165eb31ba3830fe286e72",
+          "parent_node_token": "",
+          "space_id": "7623467169245858747",
+          "title": "首页"
+        },
+        {
+          "creator": "ou_21c47ae7506bc2d5d183b3133bbdf782",
+          "has_child": false,
+          "node_create_time": "1774978186",
+          "node_token": "QuiVwcQBaiNkSuk0h36c83Qknzh",
+          "node_type": "origin",
+          "obj_create_time": "1774978186",
+          "obj_edit_time": "1774978339",
+          "obj_token": "FuBtd8j34oQxa5x7UmicroG4neg",
+          "obj_type": "docx",
+          "origin_node_token": "QuiVwcQBaiNkSuk0h36c83Qknzh",
+          "origin_space_id": "7623467169245858747",
+          "owner": "ou_21c47ae7506bc2d5d183b3133bbdf782",
+          "parent_node_token": "",
+          "space_id": "7623467169245858747",
+          "title": "TML-DDD模板使用指南v2"
+        },
+        {
+          "creator": "ou_21c47ae7506bc2d5d183b3133bbdf782",
+          "has_child": false,
+          "node_create_time": "1775059056",
+          "node_token": "Uwo3wuYObiWDN0kHFEAcIYwLnic",
+          "node_type": "origin",
+          "obj_create_time": "1775059056",
+          "obj_edit_time": "1775059056",
+          "obj_token": "WCm0ddjb1odvATxhvRVcvOLynXb",
+          "obj_type": "docx",
+          "origin_node_token": "Uwo3wuYObiWDN0kHFEAcIYwLnic",
+          "origin_space_id": "7623467169245858747",
+          "owner": "ou_21c47ae7506bc2d5d183b3133bbdf782",
+          "parent_node_token": "",
+          "space_id": "7623467169245858747",
+          "title": "README_CN"
+        },
+        {
+          "creator": "ou_21c47ae7506bc2d5d183b3133bbdf782",
+          "has_child": false,
+          "node_create_time": "1775060046",
+          "node_token": "HTfSw3h7NitO5Kk3MTTcn4FSnEe",
+          "node_type": "origin",
+          "obj_create_time": "1775060046",
+          "obj_edit_time": "1775060164",
+          "obj_token": "U8Vqd9wKzoYrUSxdavUc6SvZnvb",
+          "obj_type": "docx",
+          "origin_node_token": "HTfSw3h7NitO5Kk3MTTcn4FSnEe",
+          "origin_space_id": "7623467169245858747",
+          "owner": "ou_21c47ae7506bc2d5d183b3133bbdf782",
+          "parent_node_token": "",
+          "space_id": "7623467169245858747",
+          "title": "TML-Skills (README_CN)"
+        },
+        {
+          "creator": "ou_21c47ae7506bc2d5d183b3133bbdf782",
+          "has_child": true,
+          "node_create_time": "1775061826",
+          "node_token": "SjERwnp0mifQR7kUEJ8cgfVVnUX",
+          "node_type": "origin",
+          "obj_create_time": "1775061826",
+          "obj_edit_time": "1775061826",
+          "obj_token": "Jmy8dccI4okA3IxirFtckGKMn2G",
+          "obj_type": "docx",
+          "origin_node_token": "SjERwnp0mifQR7kUEJ8cgfVVnUX",
+          "origin_space_id": "7623467169245858747",
+          "owner": "ou_21c47ae7506bc2d5d183b3133bbdf782",
+          "parent_node_token": "",
+          "space_id": "7623467169245858747",
+          "title": "TML-Skills"
+        }
+      ],
+      "KLYywOyariyFg4kAk8pcYBo0nng": [
+        {
+          "creator": "",
+          "has_child": false,
+          "node_create_time": "1775055855",
+          "node_token": "Gv3ywTd4giRMA8ktu9Bc9RbMn9f",
+          "node_type": "origin",
+          "obj_create_time": "1775055855",
+          "obj_edit_time": "1775055855",
+          "obj_token": "MVBcdVwtYoHIzhxXw7qcgQ7ln4f",
+          "obj_type": "docx",
+          "origin_node_token": "Gv3ywTd4giRMA8ktu9Bc9RbMn9f",
+          "origin_space_id": "7623467169245858747",
+          "owner": "ou_21c47ae7506bc2d5d183b3133bbdf782",
+          "parent_node_token": "KLYywOyariyFg4kAk8pcYBo0nng",
+          "space_id": "7623467169245858747",
+          "title": "归档"
+        },
+        {
+          "creator": "",
+          "has_child": false,
+          "node_create_time": "1775059056",
+          "node_token": "Uwo3wuYObiWDN0kHFEAcIYwLnic",
+          "node_type": "origin",
+          "obj_create_time": "1775059056",
+          "obj_edit_time": "1775059056",
+          "obj_token": "WCm0ddjb1odvATxhvRVcvOLynXb",
+          "obj_type": "docx",
+          "origin_node_token": "Uwo3wuYObiWDN0kHFEAcIYwLnic",
+          "origin_space_id": "7623467169245858747",
+          "owner": "ou_21c47ae7506bc2d5d183b3133bbdf782",
+          "parent_node_token": "KLYywOyariyFg4kAk8pcYBo0nng",
+          "space_id": "7623467169245858747",
+          "title": "README_CN"
+        },
+        {
+          "creator": "",
+          "has_child": false,
+          "node_create_time": "1775060046",
+          "node_token": "HTfSw3h7NitO5Kk3MTTcn4FSnEe",
+          "node_type": "origin",
+          "obj_create_time": "1775060046",
+          "obj_edit_time": "1775060046",
+          "obj_token": "U8Vqd9wKzoYrUSxdavUc6SvZnvb",
+          "obj_type": "docx",
+          "origin_node_token": "HTfSw3h7NitO5Kk3MTTcn4FSnEe",
+          "origin_space_id": "7623467169245858747",
+          "owner": "ou_21c47ae7506bc2d5d183b3133bbdf782",
+          "parent_node_token": "KLYywOyariyFg4kAk8pcYBo0nng",
+          "space_id": "7623467169245858747",
+          "title": "TML-Skills (README_CN)"
+        },
+        {
+          "creator": "",
+          "has_child": false,
+          "node_create_time": "1775061826",
+          "node_token": "SjERwnp0mifQR7kUEJ8cgfVVnUX",
+          "node_type": "origin",
+          "obj_create_time": "1775061826",
+          "obj_edit_time": "1775061826",
+          "obj_token": "Jmy8dccI4okA3IxirFtckGKMn2G",
+          "obj_type": "docx",
+          "origin_node_token": "SjERwnp0mifQR7kUEJ8cgfVVnUX",
+          "origin_space_id": "7623467169245858747",
+          "owner": "ou_21c47ae7506bc2d5d183b3133bbdf782",
+          "parent_node_token": "KLYywOyariyFg4kAk8pcYBo0nng",
+          "space_id": "7623467169245858747",
+          "title": "TML-Skills"
+        }
+      ],
+      "Gv3ywTd4giRMA8ktu9Bc9RbMn9f": [
+        {
+          "creator": "",
+          "has_child": false,
+          "node_create_time": "1775055856",
+          "node_token": "WkQdwrEZei8VpKkR8yIc5RXJnyg",
+          "node_type": "origin",
+          "obj_create_time": "1775055856",
+          "obj_edit_time": "1775055856",
+          "obj_token": "IOnXds1wlosvlbx36OLc06Kmn8w",
+          "obj_type": "docx",
+          "origin_node_token": "WkQdwrEZei8VpKkR8yIc5RXJnyg",
+          "origin_space_id": "7623467169245858747",
+          "owner": "ou_21c47ae7506bc2d5d183b3133bbdf782",
+          "parent_node_token": "Gv3ywTd4giRMA8ktu9Bc9RbMn9f",
+          "space_id": "7623467169245858747",
+          "title": "README"
+        }
+      ],
+      "SjERwnp0mifQR7kUEJ8cgfVVnUX": [
+        {
+          "creator": "ou_21c47ae7506bc2d5d183b3133bbdf782",
+          "has_child": false,
+          "node_create_time": "1775061828",
+          "node_token": "GgRMwBw0Gi9AU7k4B5dcZ19xnih",
+          "node_type": "origin",
+          "obj_create_time": "1775061828",
+          "obj_edit_time": "1775061988",
+          "obj_token": "UWZHdsbrvohHtBxy4LJcnCIHnFe",
+          "obj_type": "docx",
+          "origin_node_token": "GgRMwBw0Gi9AU7k4B5dcZ19xnih",
+          "origin_space_id": "7623467169245858747",
+          "owner": "ou_21c47ae7506bc2d5d183b3133bbdf782",
+          "parent_node_token": "SjERwnp0mifQR7kUEJ8cgfVVnUX",
+          "space_id": "7623467169245858747",
+          "title": "README_CN"
+        },
+        {
+          "creator": "",
+          "has_child": false,
+          "node_create_time": "1775062089",
+          "node_token": "HNndwKH0DiuCUGkykH9cuSisnrc",
+          "node_type": "origin",
+          "obj_create_time": "1775062089",
+          "obj_edit_time": "1775062089",
+          "obj_token": "C1MqdBAGFofzxCx6Op3cCZzLnJc",
+          "obj_type": "docx",
+          "origin_node_token": "HNndwKH0DiuCUGkykH9cuSisnrc",
+          "origin_space_id": "7623467169245858747",
+          "owner": "ou_21c47ae7506bc2d5d183b3133bbdf782",
+          "parent_node_token": "SjERwnp0mifQR7kUEJ8cgfVVnUX",
+          "space_id": "7623467169245858747",
+          "title": "README_CN_V2"
+        }
+      ]
     }
   },
   "spaces": [
@@ -269,6 +483,62 @@
       "space_id": "7623393301878361018",
       "space_type": "team",
       "visibility": "private"
+    },
+    {
+      "description": "保存一些新资源的文档",
+      "name": "新内容发现",
+      "open_sharing": "closed",
+      "space_id": "7623425471258070238",
+      "space_type": "team",
+      "visibility": "public"
+    },
+    {
+      "description": "保存各种教程文档",
+      "name": "教程",
+      "open_sharing": "closed",
+      "space_id": "7623424427335158978",
+      "space_type": "team",
+      "visibility": "public"
+    },
+    {
+      "description": "任务交接知识库，保存团队成员之间的任务交接文档",
+      "name": "任务交接",
+      "open_sharing": "closed",
+      "space_id": "7623426891059301562",
+      "space_type": "team",
+      "visibility": "public"
+    },
+    {
+      "description": "保存项目的设计文档或者设想文档",
+      "name": "项目设计",
+      "open_sharing": "closed",
+      "space_id": "7623425639399296220",
+      "space_type": "team",
+      "visibility": "public"
+    },
+    {
+      "description": "保存团队中各种已有的资源，比如数据库、服务器等",
+      "name": "团队资源",
+      "open_sharing": "closed",
+      "space_id": "7623424631289957556",
+      "space_type": "team",
+      "visibility": "public"
+    },
+    {
+      "description": "保存TML的会议记录",
+      "name": "会议记录",
+      "open_sharing": "closed",
+      "space_id": "7623424048004861124",
+      "space_type": "team",
+      "visibility": "public"
+    },
+    {
+      "description": "保存公开使用的技术文档，技术方案等等",
+      "name": "技术知识库",
+      "open_sharing": "closed",
+      "space_id": "7623467169245858747",
+      "space_type": "team",
+      "visibility": "public"
     }
   ]
 }

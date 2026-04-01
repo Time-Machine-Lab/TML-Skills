@@ -39,7 +39,7 @@ function readCredentials() {
     const creds = {};
     const lines = content.split('\n');
     for (const line of lines) {
-        const match = line.match(/^([\w-]+):\s*"(.*?)"/);
+        const match = line.match(/^([\w-]+):\s*"?([^"]*?)"?\s*$/);
         if (match) {
             creds[match[1]] = match[2];
         }

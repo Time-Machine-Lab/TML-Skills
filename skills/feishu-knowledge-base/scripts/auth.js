@@ -10,7 +10,7 @@ function readCredentials() {
     const creds = {};
     const lines = content.split('\n');
     for (const line of lines) {
-        const match = line.match(/^([\w-]+):\s*"(.*?)"/);
+        const match = line.match(/^([\w-]+):\s*"?([^"]*?)"?\s*$/);
         if (match) {
             creds[match[1]] = match[2];
         }
@@ -23,8 +23,12 @@ function writeCredentials(content, newCreds) {
     let newContent = content;
     for (const [key, val] of Object.entries(newCreds)) {
         if (!val) continue;
-        const regex = new RegExp(`^(${key}):\\s*".*?"`, 'm');
-        newContent = newContent.replace(regex, `${key}: "${val}"`);
+        const regex = new RegExp(`^(${key}):\\s*"?([^"]*?)"?\\s*$`, 'm');
+        if (regex.test(newContent)) {
+            newContent = newContent.replace(regex, `${key}: "${val}"`);
+        } else {
+            newContent += `\n${key}: "${val}"`;
+        }
     }
     fs.writeFileSync(CREDENTIALS_PATH, newContent, 'utf-8');
 }
@@ -68,8 +72,13 @@ async function refreshToken() {
     const appSecret = creds['app-secret'];
     const refreshToken = creds['refresh_token'];
 
-    if (!appId || !appSecret || !refreshToken) {
-        console.error('Missing app-id, app-secret, or refresh_token in credentials.yaml');
+    if (!appId || !appSecret) {
+        console.error('Missing app-id or app-secret in credentials.yaml');
+        process.exit(1);
+    }
+
+    if (!refreshToken) {
+        console.error('❌ refresh_token is missing. This usually happens when the skill is newly installed. Please run `node scripts/auth.js url` to authorize first.');
         process.exit(1);
     }
 
@@ -113,6 +122,32 @@ function getAuthUrl() {
     console.log('\n' + url + '\n');
 }
 
+function showStatus() {
+    const { creds } = readCredentials();
+    const hasAppId = Boolean(creds['app-id']);
+    const hasAppSecret = Boolean(creds['app-secret']);
+    const hasAccessToken = Boolean(creds['access_token']);
+    const hasRefreshToken = Boolean(creds['refresh_token']);
+
+    console.log('Feishu Auth Status:');
+    console.log(`- app-id: ${hasAppId ? 'configured' : 'missing'}`);
+    console.log(`- app-secret: ${hasAppSecret ? 'configured' : 'missing'}`);
+    console.log(`- access_token: ${hasAccessToken ? 'configured' : 'missing'}`);
+    console.log(`- refresh_token: ${hasRefreshToken ? 'configured' : 'missing'}`);
+
+    if (!hasAppId || !hasAppSecret) {
+        console.log('\nAction: fill app-id/app-secret in config/credentials.yaml');
+        return;
+    }
+
+    if (!hasAccessToken || !hasRefreshToken) {
+        console.log('\nAction: run `node scripts/auth.js url`, then `node scripts/auth.js token <code>`');
+        return;
+    }
+
+    console.log('\nAction: credentials are ready. If API reports token expired, run `node scripts/auth.js refresh`.');
+}
+
 async function getToken(code) {
     const { creds, content } = readCredentials();
     const appId = creds['app-id'];
@@ -150,10 +185,11 @@ async function getToken(code) {
 const command = process.argv[2];
 
 async function main() {
-    console.log('Starting auth.js with command:', command);
     try {
         if (command === 'refresh') {
             await refreshToken();
+        } else if (command === 'status') {
+            showStatus();
         } else if (command === 'url') {
             getAuthUrl();
         } else if (command === 'token') {
@@ -168,6 +204,7 @@ async function main() {
 Usage: node scripts/auth.js <command>
 
 Commands:
+  status        Show auth credential readiness
   url           Generate the authorization URL
   token <code>  Exchange the authorization code for tokens
   refresh       Refresh the user_access_token using the stored refresh_token

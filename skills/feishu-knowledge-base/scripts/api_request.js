@@ -9,12 +9,26 @@ function readCredentials() {
     const creds = {};
     const lines = content.split('\n');
     for (const line of lines) {
-        const match = line.match(/^([\w-]+):\s*"(.*?)"/);
+        const match = line.match(/^([\w-]+):\s*"?([^"]*?)"?\s*$/);
         if (match) {
             creds[match[1]] = match[2];
         }
     }
     return creds;
+}
+
+function writeCredentials(content, updates) {
+    let newContent = content;
+    for (const [key, val] of Object.entries(updates)) {
+        if (!val) continue;
+        const regex = new RegExp(`^(${key}):\\s*"?([^"]*?)"?\\s*$`, 'm');
+        if (regex.test(newContent)) {
+            newContent = newContent.replace(regex, `${key}: "${val}"`);
+        } else {
+            newContent += `\n${key}: "${val}"`;
+        }
+    }
+    fs.writeFileSync(CREDENTIALS_PATH, newContent, 'utf-8');
 }
 
 function request(urlStr, options, data = null) {
@@ -43,6 +57,68 @@ function request(urlStr, options, data = null) {
         }
         req.end();
     });
+}
+
+async function getAppAccessToken(appId, appSecret) {
+    const res = await request('https://open.feishu.cn/open-apis/auth/v3/app_access_token/internal', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json; charset=utf-8' }
+    }, { app_id: appId, app_secret: appSecret });
+    if (res && res.code === 0) {
+        return res.tenant_access_token;
+    }
+    return null;
+}
+
+async function refreshAccessToken(creds) {
+    const appId = creds['app-id'];
+    const appSecret = creds['app-secret'];
+    const refreshToken = creds['refresh_token'];
+
+    if (!appId || !appSecret || !refreshToken) {
+        return { ok: false, reason: 'missing-required-credentials' };
+    }
+
+    const headers = { 'Content-Type': 'application/json; charset=utf-8' };
+    const appToken = await getAppAccessToken(appId, appSecret);
+    if (appToken) {
+        headers['Authorization'] = `Bearer ${appToken}`;
+    }
+
+    const res = await request('https://open.feishu.cn/open-apis/authen/v1/oidc/refresh_access_token', {
+        method: 'POST',
+        headers
+    }, {
+        grant_type: 'refresh_token',
+        client_id: appId,
+        client_secret: appSecret,
+        refresh_token: refreshToken
+    });
+
+    if (res && res.code === 0 && res.data && res.data.access_token) {
+        const content = fs.readFileSync(CREDENTIALS_PATH, 'utf-8');
+        writeCredentials(content, {
+            access_token: res.data.access_token,
+            refresh_token: res.data.refresh_token
+        });
+        return { ok: true, accessToken: res.data.access_token };
+    }
+
+    return { ok: false, reason: 'refresh-failed', response: res };
+}
+
+function isTokenExpiredError(res) {
+    if (!res || typeof res !== 'object' || res.code === 0 || res.code === undefined) {
+        return false;
+    }
+
+    const tokenErrorCodes = new Set([99991672, 99991663, 20010, 20014]);
+    if (tokenErrorCodes.has(res.code)) {
+        return true;
+    }
+
+    const msg = String(res.msg || '').toLowerCase();
+    return msg.includes('token') && (msg.includes('expired') || msg.includes('invalid'));
 }
 
 async function main() {
@@ -75,8 +151,8 @@ Description:
 
 Example:
   node scripts/api_request.js GET "https://open.feishu.cn/open-apis/docx/v1/documents/doc_xxx"
-  node scripts/api_request.js POST "https://open.feishu.cn/open-apis/docx/v1/documents/doc_xxx/blocks" '{"children":[]}'
-  node scripts/api_request.js POST "https://open.feishu.cn/open-apis/docx/v1/documents/doc_xxx/blocks" --base64 eyJjaGlsZHJlbiI6W119
+  node scripts/api_request.js POST "https://open.feishu.cn/open-apis/docx/v1/documents/doc_xxx/blocks/doc_xxx/children" '{"children":[]}'
+  node scripts/api_request.js POST "https://open.feishu.cn/open-apis/docx/v1/documents/doc_xxx/blocks/doc_xxx/children" --base64 eyJjaGlsZHJlbiI6W119
 `);
         process.exit(1);
     }
@@ -93,10 +169,10 @@ Example:
     }
 
     const creds = readCredentials();
-    const accessToken = creds['access_token'];
+    let accessToken = creds['access_token'];
 
     if (!accessToken) {
-        console.error('❌ access_token not found in credentials.yaml');
+        console.error('❌ access_token not found in credentials.yaml. This usually happens when the skill is newly installed. Please run `node scripts/auth.js url` to authorize first.');
         process.exit(1);
     }
 
@@ -112,12 +188,10 @@ Example:
     if (bodyStr) {
         try {
             if (bodyStr.startsWith('@')) {
-                const filePath = bodyStr.substring(1);
-                const fileContent = fs.readFileSync(filePath, 'utf-8');
-                data = JSON.parse(fileContent);
-            } else {
-                data = JSON.parse(bodyStr);
+                console.error('❌ 不支持 @文件 方式读取请求体。请改用 --base64 传递 JSON，避免产生临时文件。');
+                process.exit(1);
             }
+            data = JSON.parse(bodyStr);
         } catch (e) {
             console.error('❌ Invalid JSON body provided:', e.message);
             process.exit(1);
@@ -125,7 +199,24 @@ Example:
     }
 
     try {
-        const res = await request(url, options, data);
+        let res = await request(url, options, data);
+
+        if (isTokenExpiredError(res)) {
+            console.error('⚠️ 检测到 access_token 可能已过期，尝试自动刷新并重试一次...');
+            const refreshResult = await refreshAccessToken(creds);
+            if (refreshResult.ok) {
+                accessToken = refreshResult.accessToken;
+                options.headers.Authorization = `Bearer ${accessToken}`;
+                res = await request(url, options, data);
+                console.error('✅ token 自动刷新成功，已完成重试。');
+            } else {
+                if (refreshResult.reason === 'missing-required-credentials') {
+                    console.error('❌ 无法自动刷新：credentials.yaml 中缺少 app-id/app-secret/refresh_token。请先执行 node scripts/auth.js url 完成首次授权。');
+                } else {
+                    console.error('❌ 自动刷新失败，请执行 node scripts/auth.js refresh 或重新授权（node scripts/auth.js url）。');
+                }
+            }
+        }
 
         // 自动拦截节点列表查询并更新缓存
         if (method === 'GET') {

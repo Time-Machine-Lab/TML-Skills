@@ -10,7 +10,7 @@
 2. 按需设置父块与内容结构
 
 请求地址：
-https://open.feishu.cn/open-apis/docx/v1/documents/:document_id/blocks
+https://open.feishu.cn/open-apis/docx/v1/documents/:document_id/blocks/:block_id/children
 
 请求方法：
 POST
@@ -21,6 +21,7 @@ Content-Type: application/json; charset=utf-8
 
 路径参数：
 - document_id
+- block_id (父块 ID，文档根块 ID 等于 document_id)
 
 请求体字段以官方文档为准
 
