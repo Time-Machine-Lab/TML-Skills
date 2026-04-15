@@ -127,12 +127,13 @@ function buildVideoPoolSummary(pool) {
     readyCount: READY_STATUSES.reduce((total, status) => total + Number(statuses[status] || 0), 0),
     topCandidates: items
       .slice()
-      .sort((a, b) => Number(b.mergedScore || 0) - Number(a.mergedScore || 0))
+      .sort((a, b) => selectionScore(b) - selectionScore(a))
       .slice(0, 5)
       .map((item) => ({
         bvid: item.bvid,
         title: item.title,
         mergedScore: item.mergedScore,
+        selectionScore: selectionScore(item),
         poolStatus: item.poolStatus,
         sourceKeywords: item.sourceKeywords,
       })),
@@ -142,6 +143,36 @@ function buildVideoPoolSummary(pool) {
 function parseTime(value) {
   const ts = Date.parse(String(value || ''));
   return Number.isFinite(ts) ? ts : 0;
+}
+
+function promotionPenalty(item) {
+  const text = `${String(item?.title || '')}\n${String(item?.description || '')}`.toLowerCase();
+  let penalty = 0;
+  const patterns = [
+    /免费/,
+    /送账号/,
+    /无限多开/,
+    /自动切号/,
+    /异步拿结果/,
+    /入群/,
+    /授权码/,
+    /推广期间/,
+    /一键三连/,
+    /传送门/,
+    /福利/,
+    /下载链接/,
+    /官网/,
+  ];
+  for (const pattern of patterns) {
+    if (pattern.test(text)) {
+      penalty += 8;
+    }
+  }
+  return penalty;
+}
+
+function selectionScore(item) {
+  return Number(item?.mergedScore || 0) - promotionPenalty(item);
 }
 
 function reconcilePoolReservations(pool, now = Date.now()) {
@@ -307,19 +338,28 @@ function getPreferredPools({ poolId = '', productSlug = '' } = {}) {
     .sort((a, b) => Date.parse(String(b.updatedAt || '')) - Date.parse(String(a.updatedAt || '')));
 }
 
-function pickCandidate(items, preferredStatuses, { campaignId = '' } = {}) {
+function pickCandidate(items, preferredStatuses, { campaignId = '', excludeBvid = '' } = {}) {
   const owner = String(campaignId || '').trim();
+  const excluded = String(excludeBvid || '').trim();
   if (owner) {
-    const existingReserved = (items || []).find((item) => String(item.poolStatus || '') === RESERVED_STATUS && String(item.campaignId || '') === owner);
+    const existingReserved = (items || []).find((item) =>
+      String(item.poolStatus || '') === RESERVED_STATUS &&
+      String(item.campaignId || '') === owner &&
+      String(item.bvid || '') !== excluded
+    );
     if (existingReserved) {
       return existingReserved;
     }
   }
   const ready = (items || [])
+    .filter((item) => String(item.bvid || '') !== excluded)
     .filter((item) => preferredStatuses.includes(String(item.poolStatus || 'new')))
     .sort((a, b) => {
       if (Boolean(b.manualSeed) !== Boolean(a.manualSeed)) {
         return Number(Boolean(b.manualSeed)) - Number(Boolean(a.manualSeed));
+      }
+      if (selectionScore(b) !== selectionScore(a)) {
+        return selectionScore(b) - selectionScore(a);
       }
       if (Number(b.mergedScore || 0) !== Number(a.mergedScore || 0)) {
         return Number(b.mergedScore || 0) - Number(a.mergedScore || 0);
@@ -329,10 +369,29 @@ function pickCandidate(items, preferredStatuses, { campaignId = '' } = {}) {
   return ready[0] || null;
 }
 
-function reserveNextCandidate({ productSlug = '', poolId = '', campaignId = '' } = {}) {
+function reserveNextCandidate({ productSlug = '', poolId = '', campaignId = '', excludeBvid = '' } = {}) {
   const pools = getPreferredPools({ poolId, productSlug });
   for (const pool of pools) {
-    const candidate = pickCandidate(pool.items, READY_STATUSES, { campaignId });
+    const owner = String(campaignId || '').trim();
+    const excluded = String(excludeBvid || '').trim();
+    if (owner && excluded) {
+      const previous = (pool.items || []).find((item) =>
+        String(item.poolStatus || '') === RESERVED_STATUS &&
+        String(item.campaignId || '') === owner &&
+        String(item.bvid || '') === excluded
+      );
+      if (previous) {
+        previous.poolStatus = previous.reservationSourceStatus || 'approved';
+        previous.lastReleasedAt = nowIso();
+        previous.lastReleaseReason = 'campaign_hop';
+        previous.statusReason = 'campaign 已切到下一个视频，当前预留已释放。';
+        previous.updatedAt = previous.lastReleasedAt;
+        previous.reservedAt = '';
+        previous.reservationExpiresAt = '';
+        previous.reservationSourceStatus = '';
+      }
+    }
+    const candidate = pickCandidate(pool.items, READY_STATUSES, { campaignId, excludeBvid });
     if (!candidate) {
       continue;
     }

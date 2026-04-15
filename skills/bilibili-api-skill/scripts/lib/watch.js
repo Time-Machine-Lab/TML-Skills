@@ -7,7 +7,7 @@ const { readCredentials } = require('./config');
 const { readSession } = require('./store');
 const { refreshCookie } = require('./auth');
 const { readEngagementSettings } = require('./engagement');
-const { upsertConversation, sanitizeValue } = require('./tracker');
+const { upsertConversation, sanitizeValue, compactConversations } = require('./tracker');
 const { rebalanceAllConversations, computeAdaptiveWatchIntervalSec } = require('./scheduler');
 
 const WATCH_STATE_PATH = path.join(DATA_DIR, 'watch-state.json');
@@ -69,9 +69,28 @@ function readWatchState() {
   };
 }
 
+function pruneWatchState(state, now = Date.now()) {
+  const replyMax = 200;
+  const dmKeyMax = 300;
+  const dmSessionMaxAgeMs = 14 * 24 * 60 * 60 * 1000;
+  state.replies.processedIds = (state.replies.processedIds || []).slice(-replyMax);
+  state.dm.processedMsgKeys = (state.dm.processedMsgKeys || []).slice(-dmKeyMax);
+  const nextSessions = {};
+  for (const [mid, session] of Object.entries(state.dm.sessions || {})) {
+    const unreadCount = Number(session?.unreadCount || 0);
+    const lastSessionAt = Date.parse(String(session?.lastSessionAt || '')) || 0;
+    if (unreadCount > 0 || (lastSessionAt && lastSessionAt >= now - dmSessionMaxAgeMs)) {
+      nextSessions[mid] = session;
+    }
+  }
+  state.dm.sessions = nextSessions;
+  return state;
+}
+
 function writeWatchState(payload) {
-  writeJson(WATCH_STATE_PATH, payload);
-  return payload;
+  const next = pruneWatchState(payload);
+  writeJson(WATCH_STATE_PATH, next);
+  return next;
 }
 
 function resetWatchState() {
@@ -281,13 +300,16 @@ async function runWithRecovery({ task, state, settings, userAgent, warnings, sou
   }
 }
 
-async function pollReplyNotifications({ client, state }) {
+async function pollReplyNotifications({ client, state, unread = null }) {
   const response = await client.getReplyNotifications({
     id: state.replies.cursorId || undefined,
     replyTime: state.replies.cursorTime || undefined,
   });
   const seen = new Set((state.replies.processedIds || []).map(String));
-  const items = (response.items || []).filter((item) => !seen.has(String(item.id)));
+  const unreadReplyCount = Math.max(Number(unread?.reply || 0), Number(unread?.recvReply || 0));
+  const items = unreadReplyCount > 0
+    ? (response.items || []).filter((item) => !seen.has(String(item.id)))
+    : [];
   const events = items.map(buildReplyEvent);
 
   for (const event of events) {
@@ -336,13 +358,16 @@ async function pollDmSessions({ client, state, historySize = 20, settings }) {
   const processed = new Set((state.dm.processedMsgKeys || []).map(String));
   let fetchedCount = 0;
   const maxFetch = Math.max(Number(settings.watchMaxDmFetchPerRun || 5), 1);
+  const previousSessions = { ...(state.dm.sessions || {}) };
+  const unreadSessions = (sessions.items || [])
+    .filter((session) => Number(session.unreadCount || 0) > 0)
+    .sort((a, b) => Number(b.sessionTs || 0) - Number(a.sessionTs || 0));
 
   for (const session of sessions.items || []) {
     const mid = String(session.talkerId);
-    const current = state.dm.sessions[mid] || { maxSeqno: 0, ackSeqno: 0, unreadCount: 0, lastPolledAt: '' };
     const sessionMaxSeqno = Number(session.maxSeqno || 0);
     const sessionAckSeqno = Number(session.ackSeqno || 0);
-    const shouldFetch = session.unreadCount > 0 || sessionMaxSeqno > Number(current.maxSeqno || 0);
+    const previous = state.dm.sessions[mid] || { maxSeqno: 0, ackSeqno: 0, unreadCount: 0 };
 
     state.dm.sessions[mid] = {
       maxSeqno: sessionMaxSeqno,
@@ -352,19 +377,31 @@ async function pollDmSessions({ client, state, historySize = 20, settings }) {
       lastPolledAt: new Date().toISOString(),
     };
 
-    upsertConversation(`mid:${mid}`, {
-      mid,
-      channels: { dm: true },
-      unreadCount: Number(session.unreadCount || 0),
-      lastSessionAt: toIso(session.sessionTs),
-      lastSession: sanitizeValue(session.lastMsg || null),
-    });
+    const unreadCount = Number(session.unreadCount || 0);
+    const sessionChanged =
+      unreadCount !== Number(previous.unreadCount || 0) ||
+      sessionMaxSeqno !== Number(previous.maxSeqno || 0) ||
+      sessionAckSeqno !== Number(previous.ackSeqno || 0);
 
-    if (!shouldFetch || fetchedCount >= maxFetch) {
-      continue;
+    if (unreadCount > 0 || sessionChanged) {
+      upsertConversation(`mid:${mid}`, {
+        mid,
+        channels: { dm: true },
+        unreadCount,
+        lastSessionAt: toIso(session.sessionTs),
+        lastSession: sanitizeValue(session.lastMsg || null),
+      });
+    }
+  }
+
+  for (const session of unreadSessions) {
+    if (fetchedCount >= maxFetch) {
+      break;
     }
     fetchedCount += 1;
-
+    const mid = String(session.talkerId);
+    const current = previousSessions[mid] || { maxSeqno: 0, ackSeqno: 0, unreadCount: 0, lastPolledAt: '' };
+    const sessionMaxSeqno = Number(session.maxSeqno || 0);
     const history = await client.getDmMessages({
       talkerId: mid,
       beginSeqno: Math.max(Number(current.maxSeqno || 0), 0),
@@ -443,7 +480,6 @@ async function primeWatchState({ client }) {
     state.dm.lastPollAt = new Date().toISOString();
   }
 
-  rebalanceAllConversations(settings);
   state.updatedAt = new Date().toISOString();
   writeWatchState(state);
   return {
@@ -459,6 +495,7 @@ async function primeWatchState({ client }) {
 }
 
 async function watchOnce({ client, historySize = 20 }) {
+  compactConversations();
   const state = readWatchState();
   const settings = readEngagementSettings();
   const startedAt = new Date().toISOString();
@@ -468,6 +505,7 @@ async function watchOnce({ client, historySize = 20 }) {
     dm: { count: 0, events: [], sessionCount: 0 },
     events: [],
     warnings: [],
+    unread: null,
   };
   if (settings.watchPrimeOnEmptyState && isEmptyCheckpoint(state)) {
     const primed = await primeWatchState({ client });
@@ -511,8 +549,27 @@ async function watchOnce({ client, historySize = 20 }) {
   }
 
   try {
+    result.unread = await runWithRecovery({
+      task: () => client.getUnreadNotifications(),
+      state,
+      settings,
+      userAgent: client.userAgent,
+      warnings: result.warnings,
+      source: 'watch.unread_status',
+      client,
+    });
+  } catch (error) {
+    result.warnings.push({
+      source: 'watch.unread_status',
+      message: error.message,
+      hint: error.hint || '',
+    });
+    applyBackoff(state, settings, error);
+  }
+
+  try {
     result.replies = await runWithRecovery({
-      task: () => pollReplyNotifications({ client, state }),
+      task: () => pollReplyNotifications({ client, state, unread: result.unread }),
       state,
       settings,
       userAgent: client.userAgent,
@@ -572,6 +629,7 @@ async function watchOnce({ client, historySize = 20 }) {
       dmSessionCount: result.dm.sessionCount,
       warnings: result.warnings.length,
     },
+    unread: result.unread,
     events: result.events,
     warnings: result.warnings,
     cooldown: state.control.backoffUntil
@@ -669,10 +727,18 @@ async function watchRun({ client, intervalSec = 90, iterations = 1, historySize 
   };
 }
 
-function readEventLog(limit = 20) {
+function readEventLog(limit = 20, options = {}) {
   try {
     const lines = fs.readFileSync(WATCH_EVENTS_LOG_PATH, 'utf8').trim().split('\n').filter(Boolean);
-    return lines.slice(-limit).map((line) => JSON.parse(line));
+    const maxAgeHours = Math.max(Number(options.maxAgeHours || 24), 1);
+    const cutoff = Date.now() - maxAgeHours * 60 * 60 * 1000;
+    return lines
+      .map((line) => JSON.parse(line))
+      .filter((item) => {
+        const ts = Date.parse(String(item.at || '')) || 0;
+        return ts >= cutoff;
+      })
+      .slice(-limit);
   } catch {
     return [];
   }

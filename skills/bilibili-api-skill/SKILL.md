@@ -95,19 +95,21 @@ node scripts/bili.js watch state
 7. `node scripts/bili.js campaign run --product "<slug>" --hours 3 --scheme candidate-pool-v1`
 8. `node scripts/bili.js campaign next --id "<campaign_id>"`
 9. `node scripts/bili.js candidate next --product "<slug>" --campaign "<campaign_id>"`
-10. `node scripts/bili.js thread send --channel comment --campaign "<campaign_id>" --id "<BV>" --content "<text>" --yes`
-11. `node scripts/bili.js inbox unread --product "<slug>"`
-12. `node scripts/bili.js inbox list --product "<slug>" --campaign "<campaign_id>"`
-13. `node scripts/bili.js thread continue --mid <mid> --product "<slug>"`
-14. `node scripts/bili.js thread draft --mid <mid> --product "<slug>"`
-15. `node scripts/bili.js thread send --channel dm --mid <mid> --product "<slug>" --campaign "<campaign_id>" --content "<text>" --yes`
+10. `node scripts/bili.js thread draft --id "<BV>" --product "<slug>" --channel comment --objective "video-root-comment"`
+11. `node scripts/bili.js thread send --channel comment --campaign "<campaign_id>" --id "<BV>" --product "<slug>" --content "<text>" --yes`
+12. `node scripts/bili.js inbox unread --product "<slug>"`
+13. `node scripts/bili.js inbox list --product "<slug>" --campaign "<campaign_id>"`
+14. `node scripts/bili.js thread continue --mid <mid> --product "<slug>"`
+15. `node scripts/bili.js thread draft --mid <mid> --product "<slug>"`
+16. `node scripts/bili.js thread send --channel dm --mid <mid> --product "<slug>" --campaign "<campaign_id>" --content "<text>" --yes`
 
 说明：
 
 - `campaign run` 只负责创建 campaign 实例和预算快照，不直接发评论。
-- `campaign next` 是当前 campaign 的权威调度入口，用来判断现在应该继续当前视频、切下一个候选视频，还是先切回 inbox。
+- `campaign next` 是当前 campaign 的权威调度入口，用来判断现在应该继续当前视频、切下一个候选视频，还是先切回 inbox；它返回的 `nextSteps` 里已经包含当前应执行的草稿 / 发送骨架。
 - `candidate next` 现在是“预留候选视频”，不是立即 `consumed`。
 - 真正的公开发送入口是 `thread send --channel comment --campaign ...`。
+- `thread draft --id "<BV>" --product "<slug>" --channel comment --objective "video-root-comment"` 用来给视频主评论直接出草稿，不需要自己再拼 `inbound-text`。
 
 ## 6. Agent 规则
 
@@ -119,6 +121,11 @@ node scripts/bili.js watch state
 - 命中 `403`、`352`、`412`、冷却、budget block 时先退避
 - 公开区回复要短、像真人、带钩子，不要直接发群号/二维码
 - 中意向默认只评论回复；高意向或已存在 DM 上下文时，才允许 campaign 内升级私信
+- 不要手写 `sleep && thread send && sleep && thread send` 这类链式命令；每一步都回到 `campaign next`、`inbox list`、`thread continue` 或 `thread draft`
+- 不要在没有 `campaign` 的情况下发送视频主评论
+- 对私信和评论回复，默认先 `thread draft`，再决定是否 `thread send`
+- 不要把 skill JSON 再 pipe 给 `python3 -c`、`ruby -e`、`perl -e` 做二次格式化；直接读取原始字段并用自然语言汇报
+- 不要复述旧 campaign / 旧 session 的结论；每次先重新执行当前 `campaign status` / `campaign next` / `inbox unread`
 
 ## 7. 模块选择速查
 
@@ -142,6 +149,7 @@ node scripts/bili.js campaign run --product "<slug>" --hours 3 --scheme candidat
 node scripts/bili.js campaign status --id "<campaign_id>"
 node scripts/bili.js campaign next --id "<campaign_id>"
 node scripts/bili.js candidate next --product "<slug>" --campaign "<campaign_id>"
+node scripts/bili.js thread draft --id "<BV>" --product "<slug>" --channel comment --objective "video-root-comment"
 node scripts/bili.js thread send --channel comment --campaign "<campaign_id>" --id "<BV>" --content "<text>" --yes
 node scripts/bili.js inbox unread --product "<slug>"
 node scripts/bili.js inbox replies --product "<slug>"
@@ -173,6 +181,7 @@ node scripts/bili.js thread send --channel dm --mid <mid> --product "<slug>" --c
 - `inbox replies` 会直接返回评论回复的命令骨架；`inbox dm-sessions` 会直接返回私信续聊命令骨架
 - 每次成功发送后，返回 JSON 里的 `postActionGuidance` 会明确告诉 agent 建议暂停多久、何时继续
 - 默认暂停值来自 settings：视频评论后 `90s`、评论回复后 `20s`、私信后 `20s`
+- 如果高层输出和底层命令有冲突，优先相信高层模块链路，不要为了“快一点”绕过 draft、cooldown 或 campaign
 
 ## 10. 后续迭代方式
 

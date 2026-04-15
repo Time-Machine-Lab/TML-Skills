@@ -578,6 +578,7 @@ function summarizeBudgetState(campaign, metrics) {
 function buildInboxPressure({ campaign, runtime, settings, now }) {
   const productSlug = String(campaign.summary?.productSlug || '').trim();
   const lastInboxCheckMs = parseTime(runtime.lastInboxCheckAt);
+  const staleConversationMs = 72 * 60 * 60 * 1000;
   const items = listConversations()
     .map((conversation) => ({
       conversation,
@@ -589,21 +590,40 @@ function buildInboxPressure({ campaign, runtime, settings, now }) {
       if (!productMatched) {
         return false;
       }
+      const lastInboundMs = parseTime(conversation.lastInboundAt || '');
+      const lastOutboundMs = parseTime(conversation.lastOutboundAt || '');
+      const lastSessionMs = parseTime(conversation.lastSessionAt || '');
+      const lastActivityMs = Math.max(
+        lastInboundMs || 0,
+        lastOutboundMs || 0,
+        lastSessionMs || 0
+      );
       if (Number(conversation.unreadCount || 0) > 0) {
         return true;
       }
-      const lastInboundMs = parseTime(conversation.lastInboundAt || conversation.updatedAt || '');
-      if (conversation.lastInbound?.type === 'comment_reply_notification' && (!lastInboxCheckMs || lastInboundMs > lastInboxCheckMs)) {
+      if (
+        conversation.lastInbound?.type === 'comment_reply_notification' &&
+        lastActivityMs >= now - staleConversationMs &&
+        (!lastInboxCheckMs || lastInboundMs > lastInboxCheckMs)
+      ) {
         return true;
       }
-      return schedule.cooldownReason === 'await_reply';
+      return false;
     })
     .sort((a, b) => {
       const unreadDiff = Number(b.conversation.unreadCount || 0) - Number(a.conversation.unreadCount || 0);
       if (unreadDiff) {
         return unreadDiff;
       }
-      return parseTime(b.conversation.lastInboundAt || b.conversation.updatedAt || '') - parseTime(a.conversation.lastInboundAt || a.conversation.updatedAt || '');
+      return Math.max(
+        parseTime(b.conversation.lastInboundAt || ''),
+        parseTime(b.conversation.lastSessionAt || ''),
+        parseTime(b.conversation.lastOutboundAt || '')
+      ) - Math.max(
+        parseTime(a.conversation.lastInboundAt || ''),
+        parseTime(a.conversation.lastSessionAt || ''),
+        parseTime(a.conversation.lastOutboundAt || '')
+      );
     });
   return {
     requiresAttention: items.length > 0,
@@ -977,6 +997,33 @@ function buildCampaignNext(campaignOrId) {
       kind: 'mark-inbox',
       title: '标记本轮已做收件箱检查',
       command: `node scripts/bili.js campaign inbox-check --id "${campaignId}"`,
+    });
+  }
+
+  const activeVideoId = String(focus.activeVideoId || '').trim();
+  const currentVideoState = focus.currentVideoState || null;
+  const primaryKind = String(status.primaryAction?.kind || '').trim();
+  if (primaryKind === 'focus-video' && activeVideoId) {
+    const hasRootComment = Number(currentVideoState?.rootComments || 0) > 0;
+    if (!hasRootComment) {
+      nextSteps.push({
+        kind: 'root-comment-draft',
+        title: '先给当前视频生成主评论草稿',
+        reason: '当前视频还没有主评论，优先先发一条主评论建立公开存在感。',
+        command: `node scripts/bili.js thread draft --id "${activeVideoId}" --product "${productSlug}" --channel comment --objective "video-root-comment"`,
+      });
+      nextSteps.push({
+        kind: 'root-comment-send',
+        title: '发送当前视频主评论',
+        reason: '草稿确认后，用 campaign 入口正式发出主评论。',
+        command: `node scripts/bili.js thread send --channel comment --campaign "${campaignId}" --id "${activeVideoId}" --product "${productSlug}" --content "<text>" --yes`,
+      });
+    }
+    nextSteps.push({
+      kind: 'discover-comments',
+      title: '扫描当前视频评论区高意向评论',
+      reason: '围绕当前聚焦视频继续挖掘可回复的评论线索。',
+      command: `node scripts/bili.js thread discover-comments --id "${activeVideoId}" --product "${productSlug}" --limit 8`,
     });
   }
 

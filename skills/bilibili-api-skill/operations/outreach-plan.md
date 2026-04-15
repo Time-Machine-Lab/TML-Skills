@@ -46,6 +46,7 @@ node scripts/bili.js campaign status --id "<campaign_id>"
 node scripts/bili.js campaign next --id "<campaign_id>"
 node scripts/bili.js candidate next --product "<slug>" --campaign "<campaign_id>"
 node scripts/bili.js campaign focus --id "<campaign_id>" --video "<BV>" --video-quality medium
+node scripts/bili.js thread discover-comments --id "<BV>" --product "<slug>" --limit 15
 node scripts/bili.js inbox unread --product "<slug>"
 node scripts/bili.js thread send --channel comment --campaign "<campaign_id>" --id "<BV>" --content "<text>" --yes
 node scripts/bili.js campaign inbox-check --id "<campaign_id>"
@@ -155,6 +156,37 @@ node scripts/bili.js thread send --channel comment --campaign "<campaign_id>" --
 - 发视频主评论后建议暂停 `90s`
 - 发评论回复后建议暂停 `20s`
 
+### `thread discover-comments`
+
+作用：主动读取某个视频的评论区，把更像“有需求信号”的评论筛出来，给 agent 二次判断。
+
+适合的场景：
+
+- 某个视频评论区质量高，准备多停留一会
+- 不想只发视频主评论，想主动回复别人已有评论
+- 评论区里常出现“666”“球”“求”“蹲”“接口”“怎么搞”“收费”这类暗号或需求词
+
+命令示例：
+
+```bash
+node scripts/bili.js thread discover-comments --id "<BV>" --product "<slug>" --limit 15
+```
+
+输出说明：
+
+- `items[*].signal.level`
+  评论区信号强度，分成 `low|medium|high`
+- `items[*].signal.reasons`
+  为什么这条评论被判成可能有意向
+- `items[*].commands`
+  对应的 `thread draft` / `thread send` 命令骨架
+
+注意：
+
+- 这是启发式筛选，不是最终判断
+- 暗号类评论要交给 agent 结合视频语境再判断，不要机械地全部回复
+- 默认优先回复 `high` 和 `medium` 信号评论
+
 如果团队想改这组值，不要改提示词，也不要改代码常量，统一改 settings。
 
 ### `campaign inbox-check`
@@ -193,13 +225,15 @@ node scripts/bili.js system set-post-action-pauses --video-comment-sec 90 --comm
 3. `campaign next`
 4. 如果 `campaign next` 指向 `candidate-next`，执行 `candidate next --campaign ...`
 5. 如果 `campaign next` 指向 `focus-video`，优先围绕当前视频做公开动作
-6. 公开发送一律走 `thread send --channel comment --campaign ...`
-7. 一旦 `campaign next` 或 `campaign status` 指向 `inbox`，先执行 `inbox unread`，再立刻切回 `inbox-follow-up`
+6. 如果当前视频评论区质量高，先用 `thread discover-comments --id "<BV>" --product "<slug>"` 读评论区，再挑有信号的评论回复
+7. 公开发送一律走 `thread send --channel comment --campaign ...`
+8. 一旦 `campaign next` 或 `campaign status` 指向 `inbox`，先执行 `inbox unread`，再立刻切回 `inbox-follow-up`
 
 ## 高层规则
 
 - 默认从候选池拿视频，不在正常执行环节重复搜
 - 公开视频动作优先走 campaign 预算和节奏
+- 高质量视频默认不是“发完一条主评论就走”，而是允许继续读评论区并回复信号评论
 - 中意向默认只评论回复
 - 高意向或已存在 DM 上下文时，才允许升级私信
 - 一旦进入等待回复阶段或有 unread 信号，优先切回 `inbox-follow-up`

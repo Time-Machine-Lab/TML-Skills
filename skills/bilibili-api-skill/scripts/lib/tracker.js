@@ -7,6 +7,11 @@ const { DATA_DIR, ensureDir, readJson, writeJson } = require('./config');
 const OPERATIONS_LOG_PATH = path.join(DATA_DIR, 'operations.jsonl');
 const CONVERSATIONS_PATH = path.join(DATA_DIR, 'conversations.json');
 
+function parseTime(value) {
+  const ts = Date.parse(String(value || ''));
+  return Number.isFinite(ts) ? ts : 0;
+}
+
 function appendJsonl(filePath, payload) {
   ensureDir(path.dirname(filePath));
   fs.appendFileSync(filePath, `${JSON.stringify(payload)}\n`, 'utf8');
@@ -182,6 +187,46 @@ function listConversations() {
   return Array.isArray(db.items) ? db.items : [];
 }
 
+function conversationLastActivityAt(item) {
+  return Math.max(
+    parseTime(item?.lastInboundAt),
+    parseTime(item?.lastOutboundAt),
+    parseTime(item?.lastSessionAt)
+  );
+}
+
+function shouldKeepConversation(item, now = Date.now()) {
+  if (!item) {
+    return false;
+  }
+  if (Number(item.unreadCount || 0) > 0) {
+    return true;
+  }
+  const lastActivityAt = conversationLastActivityAt(item);
+  if (!lastActivityAt) {
+    return false;
+  }
+  const isCommentOnly = Boolean(item.channels?.comment) && !Boolean(item.channels?.dm);
+  const isDmThread = Boolean(item.channels?.dm);
+  if (isCommentOnly) {
+    return lastActivityAt >= now - 72 * 60 * 60 * 1000;
+  }
+  if (isDmThread) {
+    return lastActivityAt >= now - 14 * 24 * 60 * 60 * 1000;
+  }
+  return lastActivityAt >= now - 7 * 24 * 60 * 60 * 1000;
+}
+
+function compactConversations({ now = Date.now() } = {}) {
+  const db = readConversations();
+  const items = Array.isArray(db.items) ? db.items : [];
+  const kept = items.filter((item) => shouldKeepConversation(item, now));
+  if (kept.length !== items.length) {
+    writeConversations({ items: kept });
+  }
+  return kept;
+}
+
 function getConversationByMid(mid) {
   return listConversations().find((item) => item.mid && String(item.mid) === String(mid)) || null;
 }
@@ -226,4 +271,7 @@ module.exports = {
   getConversationByMid,
   upsertConversation,
   sanitizeValue,
+  compactConversations,
+  shouldKeepConversation,
+  conversationLastActivityAt,
 };

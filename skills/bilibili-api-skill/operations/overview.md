@@ -46,6 +46,9 @@ node scripts/bili.js campaign status --id "<campaign_id>"
 - 不要跳过 `thread` 模块，直接猜测发送动作
 - 不要在没有产品和线程上下文时硬做触达
 - 不要还没建候选池，就让 campaign 反复找视频
+- 不要手写 `sleep && thread send` 链式命令去批量发评论或私信
+- 不要跳过 `campaign next` 自己决定连续切视频或连续发主评论
+- 不要跳过 `thread draft` 直接给用户发私信或评论回复
 
 ## 高风险边界
 

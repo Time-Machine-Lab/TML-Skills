@@ -103,6 +103,15 @@ function firstNonEmpty(...values) {
   return '';
 }
 
+function normalizeHistoryItems(items = []) {
+  return [...items]
+    .map((item) => ({
+      ...item,
+      __ts: Number(item.timestamp || 0) || Math.floor((Date.parse(item.ts || '') || 0) / 1000),
+    }))
+    .sort((a, b) => a.__ts - b.__ts);
+}
+
 function summarizeProduct(product) {
   if (!product?.selected) {
     return {
@@ -110,6 +119,7 @@ function summarizeProduct(product) {
       audience: [],
       sellingPoints: [],
       tone: 'friendly',
+      assets: {},
     };
   }
   const profile = product.selected.profile || {};
@@ -118,13 +128,16 @@ function summarizeProduct(product) {
     audience: Array.isArray(profile.audience) ? profile.audience : [],
     sellingPoints: Array.isArray(profile.sellingPoints) ? profile.sellingPoints : [],
     tone: profile.preferredTone || 'friendly',
+    assets: profile.assets || {},
   };
 }
 
 function extractLatestInbound(threadContext) {
   const conversationMessage = threadContext?.conversationSummary?.lastInboundMessage || '';
   const replyMessage = threadContext?.replyNotifications?.[0]?.item?.targetReplyContent || '';
-  const dmMessage = threadContext?.dmHistory?.items?.slice(-1)?.[0]?.content?.content || '';
+  const dmMessage = normalizeHistoryItems(threadContext?.dmHistory?.items || [])
+    .filter((item) => String(item.senderUid || '') === String(threadContext?.mid || ''))
+    .slice(-1)?.[0]?.content?.content || '';
   return firstNonEmpty(conversationMessage, replyMessage, dmMessage);
 }
 
@@ -155,6 +168,43 @@ function buildCallToAction(channel) {
     return '如果你愿意，我可以继续按你的情况具体聊聊。';
   }
   return '如果你愿意，我也可以继续跟你展开说。';
+}
+
+function collectInboundTexts(threadContext) {
+  const texts = [];
+  const pushText = (value) => {
+    const text = String(value || '').trim();
+    if (text) {
+      texts.push(text);
+    }
+  };
+  pushText(threadContext?.conversationSummary?.lastInboundMessage);
+  pushText(threadContext?.replyNotifications?.[0]?.item?.targetReplyContent);
+  for (const item of normalizeHistoryItems(threadContext?.dmHistory?.items || [])) {
+    if (String(item.senderUid || '') === String(threadContext?.mid || '')) {
+      pushText(item.content?.content);
+    }
+  }
+  return texts;
+}
+
+function assessDmLeadStage(threadContext) {
+  const texts = collectInboundTexts(threadContext);
+  const merged = texts.join('\n');
+  const hasNeed = /(接口|api|接入|工作流|自用|长期|并发|稳定)/i.test(merged);
+  const hasPrice = /(收费|价格|多少钱|报价|套餐)/i.test(merged);
+  const hasTrial = /(想试|试一试|先试|刚刚开始|刚开始|入门)/i.test(merged);
+  const hasModelPreference = /(seedance|即梦|veo|sora|可灵)/i.test(merged);
+  const signals = [hasNeed, hasPrice, hasTrial, hasModelPreference].filter(Boolean).length;
+  const highIntent = signals >= 2;
+  return {
+    highIntent,
+    hasNeed,
+    hasPrice,
+    hasTrial,
+    hasModelPreference,
+    texts,
+  };
 }
 
 function buildCommentHook(productSummary, inboundText) {
@@ -224,7 +274,7 @@ function resolveConfirmationPolicy({ riskLevel, options = {}, settings }) {
   };
 }
 
-function buildDraftCandidates({ channel, product, inboundText, objective }) {
+function buildDraftCandidates({ channel, product, inboundText, objective, threadContext }) {
   const productSummary = summarizeProduct(product);
   const opening = buildOpeningSnippet(inboundText, channel);
   const acknowledgement = buildAcknowledgement(opening, channel);
@@ -256,6 +306,22 @@ function buildDraftCandidates({ channel, product, inboundText, objective }) {
     }));
   }
 
+  const leadStage = assessDmLeadStage(threadContext);
+  const groupNumber = String(productSummary.assets?.groupNumber || '').trim();
+  const qqNumber = String(productSummary.assets?.qqNumber || '').trim();
+  const directHandoff = channel === 'dm' && leadStage.highIntent && (groupNumber || qqNumber)
+    ? [
+        {
+          style: 'direct-handoff',
+          content: `你这种刚开始试、又已经确定要 Seedance 的，就不用在这边来回聊太久了。你直接先进群就行，群号 ${groupNumber || qqNumber}，进群备注一下“Seedance 试用”，我看到后直接给你对接使用方式和大概范围。`,
+        },
+        {
+          style: 'direct-qq',
+          content: `你这个场景已经够明确了，直接走承接就行。你先加一下 QQ / 群 ${qqNumber || groupNumber}，备注“Seedance 自用试用”，我这边直接按你现在的量跟你说怎么接更省事。`,
+        },
+      ]
+    : [];
+
   const variants = [
     {
       style: 'concise',
@@ -271,7 +337,7 @@ function buildDraftCandidates({ channel, product, inboundText, objective }) {
     },
   ];
 
-  return variants.map((item, index) => ({
+  return [...directHandoff, ...variants].map((item, index) => ({
     id: index + 1,
     style: item.style,
     content: item.content.trim(),
@@ -286,6 +352,7 @@ function buildThreadDraft({ threadContext, product, channel, objective, settings
     product,
     inboundText,
     objective,
+    threadContext,
   }).slice(0, settings.draftCount);
 
   const risk = assessSendRisk({
@@ -316,7 +383,8 @@ function buildThreadDraft({ threadContext, product, channel, objective, settings
         inboundText ? '已经捕获到最近一条用户表达，可直接围绕该内容回应。' : '当前没有明显的最近表达，建议先用更温和的探询式回复。',
         product?.selected ? `已绑定产品资料：${product.selected.title || product.selected.slug}` : '当前没有绑定产品资料，建议补一个产品上下文再发。',
         draftChannel === 'dm' ? '当前更适合私信继续展开说明。' : '当前更适合在评论区继续保持轻量互动。',
-      ],
+        draftChannel === 'dm' && assessDmLeadStage(threadContext).highIntent ? '该用户已经表现出较高意向，可以直接走联系方式或群入口承接。' : '',
+      ].filter(Boolean),
       beforeSendChecklist: [
         '确认回复是否真正回应了用户刚才的问题或兴趣点。',
         '确认措辞没有夸大承诺、价格承诺或过强营销感。',

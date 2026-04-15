@@ -123,6 +123,7 @@ function buildSetupStatus() {
     reliabilityRules: [
       '优先使用 `thread send`。',
       '长时间运行前先执行 `watch prime`，正式运行时只保留一个 `watch run`。',
+      '不要手写 `sleep && thread send && sleep && thread send` 这种链式发送命令；公开动作统一交给 `campaign next` 决定。',
       '搜索命中 412、消息命中 403 或 352 时先退避，再考虑刷新会话或降低频率。',
       '命中发送冷却时不要绕过限制重复发送，优先等待用户回复或继续处理别的线程。',
     ],
@@ -241,6 +242,7 @@ function buildWorkflow(goal = '') {
         '建立监听基线并启动 `watch run`。',
         '先通过 `inbox unread --product <slug>` 看未读摘要，再决定是否进入 `inbox replies` / `inbox dm-sessions` / `inbox list`。',
         '如果要执行公开动作，统一走 `thread send --channel comment --campaign "<campaign_id>" ...`。',
+        '不要手写 `sleep` 链来批量发评论；每一步都回到 `campaign next` 或 `campaign status`。', 
         '对具体用户执行 `thread continue` -> `thread draft` -> `thread send`。',
         '通过 `campaign status`、`trace recent` 和 `thread get --mid <mid>` 复盘执行过程。',
       ],

@@ -18,7 +18,7 @@ const { buildInboxOverview, buildInboxUnreadSummary, buildReplyNotificationFeed,
 const { readEngagementSettings, patchEngagementSettings, normalizeMode, assessSendRisk, resolveConfirmationPolicy, buildThreadDraft, buildPostActionGuidance } = require('./lib/engagement');
 const { WATCH_STATE_PATH, WATCH_EVENTS_LOG_PATH, WATCH_LOCK_PATH, readWatchState, readWatchLock, resetWatchState, readEventLog, primeWatchState, watchOnce, watchRun } = require('./lib/watch');
 const { summarizeSchedule, getThreadSendStatus, rebalanceAllConversations } = require('./lib/scheduler');
-const { buildCommentThreadContext } = require('./lib/comment-threads');
+const { buildCommentThreadContext, buildVideoCommentDiscovery } = require('./lib/comment-threads');
 const { initSkill, getInitStatus } = require('./lib/init');
 const { buildCampaignPlan, buildCampaignNext, buildCampaignStatus, assertCampaignSendAllowed, assertCampaignCandidatePickAllowed, markCampaignInboxCheck, markCampaignVideoFocus, recordCampaignSend, runCampaign, listCampaigns, getCampaign } = require('./lib/campaigns');
 const { buildVideoPoolSummary, saveVideoPool, getVideoPool, listVideoPools, deriveProductKeywords, buildPoolFromCollection, reserveNextCandidate, finalizeCandidateConsumption, updateCandidateStatus } = require('./lib/video-pools');
@@ -65,16 +65,13 @@ function inferCandidateQuality(score) {
 }
 
 function assertPublicCommentThrottle(options, settings) {
-  if (toBoolean(options['ignore-public-throttle'], false)) {
-    return;
-  }
   const status = getPublicSendThrottleStatus(settings);
   if (!status.blocked) {
     return;
   }
   let hint = '建议先停一下，等公开触达节奏降下来之后再继续。';
   if (status.reason === 'public_min_gap') {
-    hint = `上一条公开评论/回复刚发出不久，建议至少等到 ${status.nextAllowedAt || '冷却结束'} 再继续；如确需跳过，可追加 \`--ignore-public-throttle true\`。`;
+    hint = `上一条公开评论/回复刚发出不久，建议至少等到 ${status.nextAllowedAt || '冷却结束'} 再继续。`;
   } else if (status.reason === 'public_comment_hourly_cap') {
     hint = `当前 1 小时内主评论已达到上限（${status.commentCountPerHour}/${status.limits.publicCommentMaxPerHour}），建议暂停公开评论，先观察后续互动。`;
   } else if (status.reason === 'public_reply_hourly_cap') {
@@ -88,6 +85,33 @@ function assertPublicCommentThrottle(options, settings) {
   );
 }
 
+function assertNonCampaignCommentAllowed({ options, productSlug, commentTarget = null }) {
+  if (options.campaign) {
+    return;
+  }
+  if (!productSlug) {
+    throw new CliError(
+      '未绑定 campaign 的公开发送必须提供产品上下文。',
+      1,
+      {
+        channel: 'comment',
+      },
+      '请补上 `--product <slug>`；如果这是推广任务里的主评论，请改走 `campaign next` -> `thread send --channel comment --campaign "<campaign_id>" ...`。'
+    );
+  }
+  if (!commentTarget?.root) {
+    throw new CliError(
+      '未绑定 campaign 时，不允许直接发送视频主评论。',
+      1,
+      {
+        channel: 'comment',
+        productSlug,
+      },
+      '视频主评论必须挂在 campaign 下执行；请先用 `campaign run` / `campaign next` 获取当前应处理的视频，再走 `thread send --channel comment --campaign "<campaign_id>" ...`。'
+    );
+  }
+}
+
 function printHelp() {
   process.stdout.write(`Usage:
   # High-level workflow
@@ -99,6 +123,7 @@ function printHelp() {
   node scripts/bili.js inbox dm-sessions [--limit 20] [--product <slug>] [--mid <mid>]
   node scripts/bili.js thread continue --mid <mid> [--product <slug>] [--history-size 20]
   node scripts/bili.js thread draft [--mid <mid>] [--product <slug>] [--channel dm|comment]
+  node scripts/bili.js thread discover-comments --id <BV|AV|URL> [--product <slug>] [--page 1] [--size 20] [--search-pages 2] [--limit 20]
   node scripts/bili.js thread send --channel dm|comment [--content "<text>"] [--image </abs/path/to/image.png>] [--mid <mid>] [--product <slug>] [--campaign <campaign_id>] [--video-quality low|medium|high] [--yes] [--ignore-cooldown true]
 
   # Setup and runtime
@@ -161,6 +186,7 @@ function printHelp() {
   node scripts/bili.js thread get --mid <mid>
   node scripts/bili.js thread continue --mid <mid> [--product <slug>] [--history-size 20]
   node scripts/bili.js thread draft [--mid <mid>] [--inbound-text "<text>"] [--id <BV|AV|URL> --root <rpid>] [--product <slug>] [--channel dm|comment] [--objective "<goal>"]
+  node scripts/bili.js thread discover-comments --id <BV|AV|URL> [--product <slug>] [--page 1] [--size 20] [--search-pages 2] [--limit 20] [--sort 1] [--nohot 0]
   node scripts/bili.js thread send --channel dm|comment [--content "<text>"] [--image </abs/path/to/image.png>] [--mid <mid>] [--product <slug>] [--campaign <campaign_id>] [--id <BV|AV|URL>] [--oid <aid>] [--root <rpid>] [--parent <rpid>] [--video-quality low|medium|high] [--mode confirm|semi-auto|auto] [--yes] [--ignore-cooldown true]
 `);
 }
@@ -417,15 +443,19 @@ async function handleCandidate(action, options) {
     return ok(pool);
   }
   if (action === 'next') {
+    let excludeBvid = '';
     if (options.campaign) {
       assertCampaignCandidatePickAllowed({
         campaignId: options.campaign,
       });
+      const campaignStatus = buildCampaignStatus(options.campaign);
+      excludeBvid = String(campaignStatus.focus?.activeVideoId || '').trim();
     }
     const result = reserveNextCandidate({
       productSlug: options.product || '',
       poolId: options.id || '',
       campaignId: options.campaign || '',
+      excludeBvid,
     });
     let focus = null;
     if (options.campaign) {
@@ -592,13 +622,30 @@ async function handleWatch(action, options) {
     const settings = readEngagementSettings();
     const scheduled = rebalanceAllConversations(settings);
     const state = readWatchState();
+    const recentEvents = readEventLog(toInt(options.limit, 20), { maxAgeHours: toInt(options['event-hours'], 24) });
     const unreadDmThreads = Object.values(state.dm.sessions || {}).filter((item) => Number(item?.unreadCount || 0) > 0);
     return ok({
       statePath: WATCH_STATE_PATH,
       eventsLogPath: WATCH_EVENTS_LOG_PATH,
       lockPath: WATCH_LOCK_PATH,
       lock: readWatchLock(),
-      state,
+      state: {
+        updatedAt: state.updatedAt,
+        replies: {
+          cursorId: state.replies?.cursorId || 0,
+          cursorTime: state.replies?.cursorTime || 0,
+          processedCount: (state.replies?.processedIds || []).length,
+          lastPollAt: state.replies?.lastPollAt || '',
+        },
+        dm: {
+          sessionCount: Object.keys(state.dm.sessions || {}).length,
+          unreadSessionCount: unreadDmThreads.length,
+          processedMsgCount: (state.dm.processedMsgKeys || []).length,
+          lastPollAt: state.dm.lastPollAt || '',
+        },
+        stats: state.stats || {},
+        control: state.control || {},
+      },
       summary: {
         unreadDmThreads: unreadDmThreads.length,
         unreadDmMessages: unreadDmThreads.reduce((total, item) => total + Number(item.unreadCount || 0), 0),
@@ -609,7 +656,7 @@ async function handleWatch(action, options) {
           lastPollAt: state.replies?.lastPollAt || '',
         },
         lastRunAt: state.stats?.lastRunAt || '',
-        recentEventCount: readEventLog(toInt(options.limit, 20)).length,
+        recentEventCount: recentEvents.length,
       },
       scheduler: {
         conversations: scheduled.length,
@@ -630,7 +677,7 @@ async function handleWatch(action, options) {
             nextAllowedSendAt: item.nextAllowedSendAt || '',
         })),
       },
-      recentEvents: readEventLog(toInt(options.limit, 20)),
+      recentEvents,
       nextSteps: [
         unreadDmThreads.length
           ? '当前存在私信未读线程，优先执行 `inbox unread` 或 `inbox dm-sessions`，再按返回命令继续。'
@@ -738,6 +785,40 @@ async function handleThread(action, options) {
         product: options.product ? { selected: getProduct(options.product) } : { selected: null },
         commentThread,
       };
+    } else if (options.id) {
+      const detail = await client.getVideoDetail(requireOption(options, 'id'));
+      threadContext = {
+        recommendedChannel: 'comment',
+        conversationSummary: {
+          lastInboundMessage: detail.title || '',
+          recentHistory: [
+            {
+              direction: 'inbound',
+              type: 'video_context',
+              payload: {
+                bvid: detail.bvid,
+                aid: detail.aid,
+                title: detail.title,
+                description: detail.description || '',
+                owner: detail.owner || null,
+                stat: detail.stat || null,
+              },
+            },
+          ],
+        },
+        replyNotifications: [],
+        dmHistory: { items: [] },
+        dmSession: null,
+        product: options.product ? { selected: getProduct(options.product) } : { selected: null },
+        video: {
+          bvid: detail.bvid,
+          aid: detail.aid,
+          title: detail.title,
+          description: detail.description || '',
+          owner: detail.owner || null,
+          stat: detail.stat || null,
+        },
+      };
     } else if (options['inbound-text']) {
       threadContext = {
         recommendedChannel: options.channel || readEngagementSettings().defaultChannel,
@@ -758,8 +839,23 @@ async function handleThread(action, options) {
         threadContext,
         product: threadContext.product,
         channel: options.channel || '',
-        objective: options.objective || '',
+        objective: options.objective || (options.id && !options.root ? 'video-root-comment' : ''),
         settings,
+      })
+    );
+  }
+  if (action === 'discover-comments') {
+    return ok(
+      await buildVideoCommentDiscovery({
+        client,
+        id: requireOption(options, 'id'),
+        page: toInt(options.page, 1),
+        size: toInt(options.size, 20),
+        searchPages: toInt(options['search-pages'], 2),
+        sort: toInt(options.sort, 1),
+        nohot: toInt(options.nohot, 0),
+        productSlug: options.product || '',
+        limit: toInt(options.limit, 20),
       })
     );
   }
@@ -878,12 +974,22 @@ async function handleThread(action, options) {
 
     if (channel === 'comment') {
       const resolvedVideoId = String(options.id || options.oid || '').trim();
+      const replyRoot = options.root || '';
+      const replyParent = options.parent || (replyRoot ? replyRoot : '');
+      assertNonCampaignCommentAllowed({
+        options,
+        productSlug,
+        commentTarget: {
+          root: replyRoot || '',
+          parent: replyParent || '',
+        },
+      });
       assertCampaignSendAllowed({
         campaignId,
         channel: 'comment',
         videoId: resolvedVideoId,
         commentTarget: {
-          root: options.root || '',
+          root: replyRoot,
         },
         videoQuality: options['video-quality'] || 'medium',
       });
@@ -893,8 +999,6 @@ async function handleThread(action, options) {
       if (!options.id && !options.oid) {
         throw new CliError('发送评论时必须提供 --id 或 --oid');
       }
-      const replyRoot = options.root || '';
-      const replyParent = options.parent || (replyRoot ? replyRoot : '');
       const result = await client.sendComment({
         oid: options.oid,
         id: options.id,

@@ -1,6 +1,6 @@
 'use strict';
 
-const { listConversations, getConversationByMid, upsertConversation } = require('./tracker');
+const { listConversations, getConversationByMid } = require('./tracker');
 
 function parseTime(value) {
   const time = Date.parse(String(value || ''));
@@ -41,8 +41,14 @@ function readRecentMetrics(conversation, now) {
   const dayAgo = now - 24 * 60 * 60 * 1000;
   const hourAgo = now - 60 * 60 * 1000;
   const tenMinAgo = now - 10 * 60 * 1000;
-  const lastInboundAt = parseTime(conversation.lastInboundAt) || latestHistoryTs(history, (item) => item.direction === 'inbound');
-  const lastOutboundAt = parseTime(conversation.lastOutboundAt) || latestHistoryTs(history, (item) => item.direction === 'outbound');
+  const lastInboundAt = Math.max(
+    parseTime(conversation.lastInboundAt),
+    latestHistoryTs(history, (item) => item.direction === 'inbound')
+  );
+  const lastOutboundAt = Math.max(
+    parseTime(conversation.lastOutboundAt),
+    latestHistoryTs(history, (item) => item.direction === 'outbound')
+  );
   const inboundCount24h = countHistory(history, (item) => item.direction === 'inbound' && parseTime(item.ts) >= dayAgo);
   const outboundCount24h = countHistory(history, (item) => item.direction === 'outbound' && parseTime(item.ts) >= dayAgo);
   const inboundCount1h = countHistory(history, (item) => item.direction === 'inbound' && parseTime(item.ts) >= hourAgo);
@@ -192,19 +198,55 @@ function summarizeSchedule(conversation, settings, now = Date.now()) {
   };
 }
 
+function activityTimestamp(conversation) {
+  return Math.max(
+    parseTime(conversation?.lastInboundAt),
+    parseTime(conversation?.lastOutboundAt),
+    parseTime(conversation?.lastSessionAt)
+  );
+}
+
+function isWatchRelevantConversation(conversation, settings, now = Date.now()) {
+  if (!conversation) {
+    return false;
+  }
+  if (Number(conversation.unreadCount || 0) > 0) {
+    return true;
+  }
+  const activeWindowMs = Math.max(Number(settings.watchCoolWindowSec || 86400), 3600) * 1000;
+  const lastActivityAt = activityTimestamp(conversation);
+  if (!lastActivityAt) {
+    return false;
+  }
+  return lastActivityAt >= now - activeWindowMs;
+}
+
+function decorateConversation(conversation, settings, now = Date.now()) {
+  return {
+    ...conversation,
+    ...summarizeSchedule(conversation, settings, now),
+  };
+}
+
 function rebalanceConversation(mid, settings, now = Date.now()) {
   const conversation = getConversationByMid(mid);
   if (!conversation) {
     return null;
   }
-  const schedule = summarizeSchedule(conversation, settings, now);
-  return upsertConversation(conversation.key, schedule);
+  return decorateConversation(conversation, settings, now);
 }
 
 function rebalanceAllConversations(settings, now = Date.now()) {
-  return listConversations().map((conversation) =>
-    upsertConversation(conversation.key, summarizeSchedule(conversation, settings, now))
-  );
+  return listConversations()
+    .filter((conversation) => isWatchRelevantConversation(conversation, settings, now))
+    .map((conversation) => decorateConversation(conversation, settings, now))
+    .sort((a, b) => {
+      const scoreDiff = Number(b.engagementScore || 0) - Number(a.engagementScore || 0);
+      if (scoreDiff) {
+        return scoreDiff;
+      }
+      return activityTimestamp(b) - activityTimestamp(a);
+    });
 }
 
 function getThreadSendStatus(mid, settings, now = Date.now()) {
@@ -227,7 +269,7 @@ function getThreadSendStatus(mid, settings, now = Date.now()) {
 }
 
 function computeAdaptiveWatchIntervalSec(settings, now = Date.now()) {
-  const conversations = listConversations();
+  const conversations = listConversations().filter((conversation) => isWatchRelevantConversation(conversation, settings, now));
   if (!conversations.length) {
     return Math.max(Number(settings.watchIntervalSec || 90), 30);
   }
@@ -255,4 +297,5 @@ module.exports = {
   rebalanceAllConversations,
   getThreadSendStatus,
   computeAdaptiveWatchIntervalSec,
+  isWatchRelevantConversation,
 };

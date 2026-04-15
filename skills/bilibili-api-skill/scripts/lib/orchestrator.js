@@ -35,6 +35,30 @@ function scoreTimestamp(value) {
   return Number.isNaN(parsed) ? 0 : parsed;
 }
 
+function hoursAgo(ms, hours) {
+  return ms >= Date.now() - hours * 60 * 60 * 1000;
+}
+
+function isActionableTrackedConversation(item) {
+  if (!item) {
+    return false;
+  }
+  const lastInboundAt = scoreTimestamp(item.lastInboundAt || '');
+  const lastOutboundAt = scoreTimestamp(item.lastOutboundAt || '');
+  const lastSessionAt = scoreTimestamp(item.lastSessionAt || '');
+  const lastActivityAt = Math.max(lastInboundAt, lastOutboundAt, lastSessionAt);
+  if (!lastActivityAt) {
+    return false;
+  }
+  if (Number(item.unreadCount || 0) > 0) {
+    return true;
+  }
+  if (item.lastInbound?.type === 'comment_reply_notification') {
+    return hoursAgo(lastActivityAt, 72);
+  }
+  return false;
+}
+
 function buildProductReference(productSlug) {
   if (!productSlug) {
     return {
@@ -132,6 +156,7 @@ function buildCommentReplyCommands({ notification = null, productSlug = '' } = {
   }
   return [
     `node scripts/bili.js thread draft${locator}${root}${product} --channel comment`,
+    '先基于 draft 结果改写，再决定是否发送；不要跳过 `thread draft` 直接发评论。',
     `node scripts/bili.js thread send --channel comment${locator}${root}${parent}${product} --content "<text>" --yes`,
   ];
 }
@@ -166,7 +191,7 @@ function summarizeDmSession(entry, productSlug = '') {
     commands: [
       `node scripts/bili.js thread continue --mid ${mid}${product}`,
       `node scripts/bili.js thread draft --mid ${mid}${product}`,
-      `node scripts/bili.js thread send --channel dm --mid ${mid}${product} --content "<text>" --yes`,
+      '先看 `thread continue` 和 `thread draft`，确认上下文后再决定是否发送私信。',
     ],
   };
 }
@@ -177,6 +202,7 @@ function buildSuggestedCommands({ mid, productSlug, recommendedChannel, replyNot
     commands.push(`node scripts/bili.js thread continue --mid ${mid}${productSlug ? ` --product "${productSlug}"` : ''}`);
     if (recommendedChannel === 'dm') {
       commands.push(`node scripts/bili.js thread draft --mid ${mid}${productSlug ? ` --product "${productSlug}"` : ''}`);
+      commands.push('不要跳过 `thread draft` 直接发私信；先看最新未读和推荐草稿。');
     } else {
       commands.push(...(replyNotifications[0]?.commands || ['优先查看 `inbox replies` 返回的评论命令骨架，不要手写评论定位参数。']));
     }
@@ -192,6 +218,7 @@ function buildReplyGuide({ product, recommendedChannel, replyNotifications, dmHi
       '先回应对方当前表达的具体问题或情绪，不要直接推产品。',
       '如果用户已经表现出明确兴趣，再逐步引导到私信或进一步信息。',
       '避免夸大承诺、价格承诺或脱离上下文的硬广表达。',
+      '不要跳过 `thread draft`，也不要手写 `sleep && thread send` 这种链式执行。',
     ],
     suggestedFocus: [],
   };
@@ -216,7 +243,7 @@ function buildActionCard({ item, productSlug }) {
     `node scripts/bili.js thread draft --mid ${item.mid}${productSlug ? ` --product "${productSlug}"` : ''}`,
   ];
   if (item.recommendedChannel === 'dm') {
-    commands.push(`node scripts/bili.js thread send --channel dm --mid ${item.mid}${productSlug ? ` --product "${productSlug}"` : ''} --content "<text>" --yes`);
+    commands.push('先确认 `thread draft` 产出的推荐草稿，再发送私信。');
   } else {
     commands.push(...buildCommentReplyCommands({ notification: item.replyNotification || null, productSlug }));
   }
@@ -243,8 +270,12 @@ async function captureSafe(label, task) {
   }
 }
 
-function mergeInboxItems({ trackedConversations, replyNotifications, dmSessions, limit }) {
+function mergeInboxItems({ trackedConversations, replyNotifications, dmSessions, limit, unread = null }) {
   const byMid = new Map();
+  const unreadReplyCount = Math.max(
+    Number(unread?.reply || 0),
+    Number(unread?.recvReply || 0)
+  );
 
   function upsert(mid, patch) {
     if (!mid) {
@@ -282,6 +313,9 @@ function mergeInboxItems({ trackedConversations, replyNotifications, dmSessions,
   }
 
   for (const item of trackedConversations) {
+    if (!isActionableTrackedConversation(item)) {
+      continue;
+    }
     upsert(item.mid, {
       mid: String(item.mid),
       nickname: item.nickname || '',
@@ -292,10 +326,13 @@ function mergeInboxItems({ trackedConversations, replyNotifications, dmSessions,
       lastActivityAt: item.updatedAt || item.lastInboundAt || item.lastOutboundAt || item.lastSessionAt || '',
       snippets: [item.lastInbound?.message, item.lastMessage?.content?.content],
       tracked: item,
+      liveSignals: {
+        tracked: true,
+      },
     });
   }
 
-  for (const item of replyNotifications?.items || []) {
+  for (const item of unreadReplyCount > 0 ? (replyNotifications?.items || []) : []) {
     const mid = item.user?.mid;
     upsert(mid, {
       nickname: item.user?.nickname || '',
@@ -305,16 +342,25 @@ function mergeInboxItems({ trackedConversations, replyNotifications, dmSessions,
       lastActivityAt: toIso(item.replyTime),
       snippets: [item.item?.targetReplyContent, item.item?.sourceContent, item.item?.title],
       replyNotification: item,
+      liveSignals: {
+        replyNotification: true,
+      },
     });
   }
 
   for (const item of dmSessions?.items || []) {
+    if (Number(item.unreadCount || 0) <= 0) {
+      continue;
+    }
     upsert(item.talkerId, {
       channels: ['dm'],
-      reasons: item.unreadCount > 0 ? ['私信有未读消息'] : ['存在私信会话'],
+      reasons: ['私信有未读消息'],
       unreadDmCount: Math.max(Number(item.unreadCount || 0), 0),
       lastActivityAt: toIso(item.sessionTs),
       snippets: [item.lastMsg?.content?.content],
+      liveSignals: {
+        dmSession: true,
+      },
     });
   }
 
@@ -322,7 +368,13 @@ function mergeInboxItems({ trackedConversations, replyNotifications, dmSessions,
     .map((item) => ({
       ...item,
       recommendedChannel: item.unreadDmCount > 0 || item.channels.includes('dm') ? 'dm' : 'comment',
-      priorityScore: (item.unreadDmCount > 0 ? 50 : 0) + (item.hasCommentReply ? 30 : 0) + Math.min(item.reasons.length, 5) * 5,
+      priorityScore:
+        (item.unreadDmCount > 0 ? 90 : 0) +
+        (item.liveSignals?.dmSession ? 35 : 0) +
+        (item.liveSignals?.replyNotification ? 30 : 0) +
+        (item.hasCommentReply ? 15 : 0) +
+        (item.liveSignals?.tracked ? 5 : 0) +
+        Math.min(item.reasons.length, 5) * 5,
       commentTarget: item.replyNotification ? resolveCommentTarget(item.replyNotification) : null,
     }))
     .sort((a, b) => {
@@ -343,14 +395,16 @@ async function buildInboxUnreadSummary({ client, productSlug, limit = 5, campaig
     captureSafe('inbox.unread_status', () => client.getUnreadNotifications()),
   ]);
   const warnings = [repliesResult.warning, dmSessionsResult.warning, unreadResult.warning].filter(Boolean);
+  const unread = unreadResult.data || {};
+  const unreadReplyCount = Math.max(Number(unread.reply || 0), Number(unread.recvReply || 0));
   const mergedItems = mergeInboxItems({
     trackedConversations,
     replyNotifications: repliesResult.data,
     dmSessions: dmSessionsResult.data,
+    unread,
     limit,
   });
-  const unread = unreadResult.data || {};
-  const replyItems = (repliesResult.data?.items || []).slice(0, limit).map((item) =>
+  const replyItems = (unreadReplyCount > 0 ? (repliesResult.data?.items || []) : []).slice(0, limit).map((item) =>
     summarizeReplyNotification(item, product.selected?.slug || '')
   );
   const dmItems = (dmSessionsResult.data?.items || [])
@@ -464,6 +518,7 @@ async function buildInboxOverview({ client, productSlug, limit = 20, campaignId 
     trackedConversations,
     replyNotifications: repliesResult.data,
     dmSessions: dmSessionsResult.data,
+    unread: unreadResult.data,
     limit,
   });
 
