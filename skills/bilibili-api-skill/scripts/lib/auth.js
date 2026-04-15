@@ -3,7 +3,6 @@
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
-const QRCode = require('qrcode');
 const { request, unwrapBiliResponse } = require('./http');
 const { patchSecrets, patchSession, readSession } = require('./store');
 const { updateCredentials, CACHE_DIR, ensureDir } = require('./config');
@@ -39,7 +38,24 @@ nzPjfdTcqMz7djHum0qSZA0AyCBDABUqCrfNgCiJ00Ra7GmRj+YCK1NJEuewlb40
 JNrRuoEUXpabUzGB8QIDAQAB
 -----END PUBLIC KEY-----`;
 
+function getQrCodeLibrary() {
+  try {
+    return require('qrcode');
+  } catch (error) {
+    throw new CliError(
+      '当前环境缺少 `qrcode` 依赖，暂时无法生成扫码登录二维码。',
+      1,
+      {
+        dependency: 'qrcode',
+        detail: error.message,
+      },
+      '其余不依赖扫码登录的命令仍可继续使用；如果需要二维码登录，请先补齐该依赖。'
+    );
+  }
+}
+
 async function generateQrCode({ userAgent }) {
+  const QRCode = getQrCodeLibrary();
   const result = await request(QR_CODE_GENERATE_URL, {
     method: 'GET',
     headers: {

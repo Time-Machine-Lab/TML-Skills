@@ -517,12 +517,12 @@ async function watchOnce({ client, historySize = 20 }) {
       settings,
       userAgent: client.userAgent,
       warnings: result.warnings,
-      source: 'notify.replies',
+      source: 'watch.reply_notifications',
       client,
     });
   } catch (error) {
     result.warnings.push({
-      source: 'notify.replies',
+      source: 'watch.reply_notifications',
       message: error.message,
       hint: error.hint || '',
     });
@@ -536,12 +536,12 @@ async function watchOnce({ client, historySize = 20 }) {
       settings,
       userAgent: client.userAgent,
       warnings: result.warnings,
-      source: 'dm.sessions',
+      source: 'watch.dm_sessions',
       client,
     });
   } catch (error) {
     result.warnings.push({
-      source: 'dm.sessions',
+      source: 'watch.dm_sessions',
       message: error.message,
       hint: error.hint || '',
     });
@@ -606,8 +606,8 @@ async function watchOnce({ client, historySize = 20 }) {
     },
     nextSteps: [
       result.events.length
-        ? '优先按事件里的 mid 调用 `thread continue --mid <mid>` 继续处理。'
-        : '当前没有新增互动，可以继续按当前间隔轮询。',
+        ? '优先先看 `inbox unread` / `inbox replies`，再按事件里的 mid 调用 `thread continue --mid <mid>` 继续处理。'
+        : '当前没有新增互动，可以继续按当前间隔轮询；如果要确认实时未读摘要，执行 `inbox unread`。',
     ],
   };
 }

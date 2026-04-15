@@ -14,9 +14,8 @@ const RUNTIME_ROOT_DIR = process.env.BILI_SKILL_RUNTIME_DIR || persistedRuntimeC
 const CONFIG_DIR = path.join(RUNTIME_ROOT_DIR, 'config');
 const CACHE_DIR = path.join(RUNTIME_ROOT_DIR, 'cache');
 const DATA_DIR = path.join(RUNTIME_ROOT_DIR, 'data');
-const TASKS_DIR = path.join(DATA_DIR, 'tasks');
+const VIDEO_POOLS_DIR = path.join(DATA_DIR, 'video-pools');
 const PRODUCTS_DIR = process.env.BILI_SKILL_PRODUCTS_DIR || path.join(RUNTIME_ROOT_DIR, 'products');
-const PLAYBOOKS_DIR = process.env.BILI_SKILL_PLAYBOOKS_DIR || path.join(RUNTIME_ROOT_DIR, 'playbooks');
 const CREDENTIALS_PATH = path.join(CONFIG_DIR, 'credentials.json');
 const SECRETS_PATH = path.join(CONFIG_DIR, 'secrets.json');
 const SESSION_PATH = path.join(CONFIG_DIR, 'session.json');
@@ -48,9 +47,8 @@ function buildRuntimePaths(runtimeRoot) {
     configDir,
     cacheDir: path.join(resolvedRoot, 'cache'),
     dataDir: path.join(resolvedRoot, 'data'),
-    tasksDir: path.join(resolvedRoot, 'data', 'tasks'),
+    videoPoolsDir: path.join(resolvedRoot, 'data', 'video-pools'),
     productsDir: path.join(resolvedRoot, 'products'),
-    playbooksDir: path.join(resolvedRoot, 'playbooks'),
     credentialsPath: path.join(configDir, 'credentials.json'),
     secretsPath: path.join(configDir, 'secrets.json'),
     sessionPath: path.join(configDir, 'session.json'),
@@ -88,12 +86,11 @@ module.exports = {
   RUNTIME_ROOT_DIR,
   RUNTIME_CONFIG_PATH,
   PRODUCTS_DIR,
-  PLAYBOOKS_DIR,
   CONFIG_DIR,
   BUNDLED_CONFIG_DIR,
   CACHE_DIR,
   DATA_DIR,
-  TASKS_DIR,
+  VIDEO_POOLS_DIR,
   CREDENTIALS_PATH,
   SECRETS_PATH,
   SESSION_PATH,

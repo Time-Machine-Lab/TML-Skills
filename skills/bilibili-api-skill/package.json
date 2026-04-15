@@ -1,0 +1,14 @@
+{
+  "name": "bilibili-api-skill",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Modular Bilibili outreach skill runtime dependencies",
+  "type": "commonjs",
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "image-size": "^1.1.1",
+    "qrcode": "^1.5.4"
+  }
+}

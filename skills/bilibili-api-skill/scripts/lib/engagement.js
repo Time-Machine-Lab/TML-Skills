@@ -12,6 +12,9 @@ const DEFAULT_SETTINGS = {
   publicCommentMinGapSec: 180,
   publicCommentMaxPerHour: 20,
   publicReplyMaxPerHour: 100,
+  postVideoCommentPauseSec: 90,
+  postCommentReplyPauseSec: 20,
+  postDmPauseSec: 20,
   campaignCommentReplyGapSec: 20,
   campaignVideoHopMinSec: 60,
   campaignVideoHopMaxSec: 120,
@@ -335,6 +338,34 @@ function buildThreadDraft({ threadContext, product, channel, objective, settings
   };
 }
 
+function buildPostActionGuidance({ channel, commentTarget = null, settings, now = Date.now() }) {
+  const root = String(commentTarget?.root || '').trim();
+  const isComment = channel === 'comment';
+  const isReply = isComment && Boolean(root);
+  const pauseSec = isComment
+    ? Math.max(Number(isReply ? settings.postCommentReplyPauseSec : settings.postVideoCommentPauseSec), 5)
+    : Math.max(Number(settings.postDmPauseSec), 5);
+  const resumeAfter = new Date(now + pauseSec * 1000).toISOString();
+  const actionType = isComment ? (isReply ? 'comment-reply' : 'video-comment') : 'dm';
+  const title = isComment
+    ? (isReply ? '评论回复后建议暂停' : '视频评论后建议暂停')
+    : '私信发送后建议暂停';
+  const reason = isComment
+    ? (isReply ? '为了预防评论区连续回复触发风控，建议短暂停顿后再继续。' : '为了预防公开视频动作过密触发风控，建议短暂停顿后再继续。')
+    : '为了预防私信节奏过密触发风控，建议短暂停顿后再继续。';
+  return {
+    actionType,
+    pauseSec,
+    resumeAfter,
+    title,
+    reason,
+    prompt: `为了预防风控，你可以稍作休息 ${pauseSec} 秒后继续工作。`,
+    settingsKeys: isComment
+      ? (isReply ? ['postCommentReplyPauseSec'] : ['postVideoCommentPauseSec'])
+      : ['postDmPauseSec'],
+  };
+}
+
 module.exports = {
   DEFAULT_SETTINGS,
   SETTINGS_PATH,
@@ -345,4 +376,5 @@ module.exports = {
   assessSendRisk,
   resolveConfirmationPolicy,
   buildThreadDraft,
+  buildPostActionGuidance,
 };

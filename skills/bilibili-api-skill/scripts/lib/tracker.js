@@ -93,9 +93,6 @@ function getPublicSendThrottleStatus(settings, now = Date.now()) {
     }
     const resource = item.command?.resource || '';
     const action = item.command?.action || '';
-    if (resource === 'comment' && action === 'send') {
-      return true;
-    }
     if (resource === 'thread' && action === 'send' && item.payload?.data?.channel === 'comment') {
       return true;
     }
@@ -195,76 +192,6 @@ function trackConversationFromCommand(context, payload) {
     return;
   }
 
-  if (context.resource === 'notify' && context.action === 'replies' && Array.isArray(data.items)) {
-    for (const item of data.items) {
-      const mid = item.user?.mid;
-      if (!mid) {
-        continue;
-      }
-      upsertConversation(`mid:${mid}`, {
-        mid: String(mid),
-        nickname: item.user?.nickname || '',
-        channels: { comment: true },
-        lastInboundAt: item.replyTime ? new Date(item.replyTime * 1000).toISOString() : new Date().toISOString(),
-        lastInbound: {
-          type: 'comment_reply_notification',
-          message: item.item?.targetReplyContent || item.item?.sourceContent || '',
-          sourceContent: item.item?.sourceContent || '',
-          title: item.item?.title || '',
-        },
-        history: [
-          {
-            ts: new Date().toISOString(),
-            direction: 'inbound',
-            type: 'comment_reply_notification',
-            payload: sanitizeValue(item),
-          },
-        ],
-      });
-    }
-  }
-
-  if (context.resource === 'dm' && context.action === 'send' && data.receiverId) {
-    upsertConversation(`mid:${data.receiverId}`, {
-      mid: String(data.receiverId),
-      channels: { dm: true },
-      lastOutboundAt: new Date().toISOString(),
-      lastOutbound: {
-        type: 'dm_send',
-        msgKey: data.msgKey || '',
-      },
-      history: [
-        {
-          ts: new Date().toISOString(),
-          direction: 'outbound',
-          type: 'dm_send',
-          payload: sanitizeValue(data),
-        },
-      ],
-    });
-  }
-
-  if (context.resource === 'dm' && context.action === 'send-image' && data.receiverId) {
-    upsertConversation(`mid:${data.receiverId}`, {
-      mid: String(data.receiverId),
-      channels: { dm: true },
-      lastOutboundAt: new Date().toISOString(),
-      lastOutbound: {
-        type: 'dm_send_image',
-        msgKey: data.msgKey || '',
-        imageUrl: data.image?.url || '',
-      },
-      history: [
-        {
-          ts: new Date().toISOString(),
-          direction: 'outbound',
-          type: 'dm_send_image',
-          payload: sanitizeValue(data),
-        },
-      ],
-    });
-  }
-
   if (context.resource === 'thread' && context.action === 'send' && data.targetMid) {
     upsertConversation(`mid:${data.targetMid}`, {
       mid: String(data.targetMid),
@@ -283,35 +210,6 @@ function trackConversationFromCommand(context, payload) {
           payload: sanitizeValue(data),
         },
       ],
-    });
-  }
-
-  if (context.resource === 'dm' && context.action === 'sessions' && Array.isArray(data.items)) {
-    for (const item of data.items) {
-      upsertConversation(`mid:${item.talkerId}`, {
-        mid: String(item.talkerId),
-        channels: { dm: true },
-        unreadCount: item.unreadCount || 0,
-        lastSessionAt: item.sessionTs ? new Date(item.sessionTs * 1000).toISOString() : '',
-        lastSession: sanitizeValue(item.lastMsg || null),
-      });
-    }
-  }
-
-  if (context.resource === 'dm' && context.action === 'history' && Array.isArray(data.items) && context.options?.mid) {
-    const mid = String(context.options.mid);
-    const lastMessage = data.items[data.items.length - 1] || null;
-    upsertConversation(`mid:${mid}`, {
-      mid,
-      channels: { dm: true },
-      lastMessageAt: lastMessage?.timestamp ? new Date(lastMessage.timestamp * 1000).toISOString() : '',
-      lastMessage: sanitizeValue(lastMessage),
-      history: data.items.slice(-10).map((item) => ({
-        ts: item.timestamp ? new Date(item.timestamp * 1000).toISOString() : new Date().toISOString(),
-        direction: String(item.senderUid) === mid ? 'inbound' : 'outbound',
-        type: 'dm_message',
-        payload: sanitizeValue(item),
-      })),
     });
   }
 }

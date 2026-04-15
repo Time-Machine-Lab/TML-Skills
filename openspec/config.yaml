@@ -1,0 +1,35 @@
+schema: spec-driven
+context: |
+  TML Spec Coding workspace for Codex.
+
+  Source-of-truth documents:
+  - docs/api/*.yaml defines API contracts.
+  - docs/sql/*.sql defines database schema and storage contracts.
+  - docs/design/*.md defines architecture and domain design.
+  - docs/spec/**/*.md defines coding and process standards.
+  - docs/governance/*.md defines governed delivery rules for execution.
+
+  Workflow expectations:
+  - Explore should inspect docs/design, docs/api, and docs/sql before recommending implementation paths.
+  - Propose should treat docs/sql and docs/api updates as prerequisite work whenever a change touches storage or interfaces.
+  - Apply should read docs/spec plus the approved change artifacts before writing code, and implementation must stay aligned with docs/api and docs/sql.
+
+  Codex-specific notes:
+  - Prefer the local skill `spec-governed-coding` for governed spec-first execution.
+  - Use `tml-docs-spec-generate` when creating or refreshing TML-standard documents.
+
+rules:
+  proposal:
+    - Read docs/design/*.md, docs/api/*.yaml, and docs/sql/*.sql when they exist before drafting artifacts.
+    - If the change affects storage or interfaces, make docs/sql and docs/api updates explicit prerequisite work before business-code tasks.
+    - Keep scope aligned with the docs/ directory as the single source of truth.
+  specs:
+    - Keep requirements consistent with docs/api/*.yaml and docs/sql/*.sql when APIs or data models are involved.
+    - Do not invent APIs or storage models without either an existing docs definition or an explicit docs update in the change.
+  design:
+    - Reference existing docs/design/*.md and call out required architecture or contract updates.
+    - Document migration, integration, and compatibility implications when docs/api or docs/sql will change.
+  tasks:
+    - Put docs/sql and docs/api updates before implementation tasks whenever storage or interface changes are required.
+    - Include verification tasks for docs/spec conformance, contract alignment, and tests.
+    - Keep tasks ordered, concrete, and small enough to execute safely.

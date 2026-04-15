@@ -4,8 +4,9 @@ const path = require('path');
 const { DATA_DIR, ensureDir, writeJson, readJson } = require('./config');
 const { CliError } = require('./errors');
 const { summarizeProduct } = require('./products');
-const { readRecentOperations, filterOperationsByCampaign, getPublicSendThrottleStatus } = require('./tracker');
+const { readRecentOperations, filterOperationsByCampaign, getPublicSendThrottleStatus, listConversations } = require('./tracker');
 const { readEngagementSettings } = require('./engagement');
+const { summarizeSchedule } = require('./scheduler');
 
 const CAMPAIGNS_DIR = path.join(DATA_DIR, 'campaigns');
 const CAMPAIGN_INDEX_PATH = path.join(CAMPAIGNS_DIR, 'index.json');
@@ -41,17 +42,52 @@ function clamp(value, min, max) {
   return Math.min(Math.max(value, min), max);
 }
 
+function addSeconds(iso, seconds) {
+  const base = parseTime(iso);
+  if (!base) {
+    return '';
+  }
+  return new Date(base + Math.max(Number(seconds || 0), 0) * 1000).toISOString();
+}
+
+function qualityBudgetKey(value) {
+  const normalized = normalizeQualityTier(value);
+  if (normalized === 'low') {
+    return 'lowQuality';
+  }
+  if (normalized === 'high') {
+    return 'highQuality';
+  }
+  return 'mediumQuality';
+}
+
+function getPerVideoBudget(plan, qualityTier) {
+  const bucket = plan?.budgets?.perVideoQualityBudget || {};
+  return bucket[qualityBudgetKey(qualityTier)] || bucket.mediumQuality || null;
+}
+
+function nextWindowOpenAt(operations, now) {
+  const timestamps = (operations || [])
+    .map((item) => parseTime(item.ts))
+    .filter((value) => value > 0 && value >= now - 60 * 60 * 1000)
+    .sort((a, b) => a - b);
+  if (!timestamps.length) {
+    return '';
+  }
+  return new Date(timestamps[0] + 60 * 60 * 1000).toISOString();
+}
+
 function schemePreset(name) {
-  const normalized = String(name || 'scheme1').trim().toLowerCase();
-  if (normalized !== 'scheme1') {
-    throw new CliError('当前只支持 scheme1。');
+  const normalized = String(name || 'candidate-pool-v1').trim().toLowerCase();
+  if (normalized !== 'candidate-pool-v1') {
+    throw new CliError('当前只支持 candidate-pool-v1。');
   }
   return {
-    key: 'scheme1',
-    title: '方案一-广撒网引流',
-    description: '围绕单个产品按小步快跑的方式做公开评论、评论回复和私信跟进，优先保证节奏稳定和低重复。',
+    key: 'candidate-pool-v1',
+    title: '候选池公开引流-v1',
+    description: '围绕单个产品按小步快跑的方式消费候选池、执行公开评论、评论回复和私信跟进，优先保证节奏稳定和低重复。',
     cadence: {
-      discoverVideoEverySec: 120,
+      pickCandidateEverySec: 120,
       checkInboxEverySec: 180,
       commentReplyMinGapSec: 20,
       videoHopMinSec: 60,
@@ -101,8 +137,9 @@ function schemePreset(name) {
       '如果任务进入等待回复阶段，优先处理 inbox，不要继续扩大发送面。',
       '评论区质量高时可以在同一个视频下停留更久，但仍要遵守单条公开互动至少 20 秒间隔。',
       '从当前视频切到下一个视频前，至少等待 1 到 2 分钟，不要频繁换视频。',
-      '不要机械地每 2 分钟都重新搜索；只有当前视频评论区质量差、已榨干或命中黑名单时，才换下一个视频。',
-      '优先挑播放量、收藏量、互动密度都更高的视频；宁可少搜，也不要一直翻低质量长尾视频。',
+      '不要机械地每 2 分钟都重新搜索；默认只是在候选池里切换到下一个视频。',
+      '只有当前视频评论区质量差、已榨干或命中黑名单时，才换下一个候选视频。',
+      '优先挑播放量、收藏量、互动密度都更高的候选视频；宁可少换，也不要一直翻低质量长尾视频。',
     ],
   };
 }
@@ -130,9 +167,13 @@ function writeCampaign(payload) {
   ensureCampaignsDir();
   payload.runtime = {
     activeVideoId: '',
+    activeVideoQuality: '',
+    activeVideoReason: '',
     lastActionAt: '',
     lastVideoActionAt: '',
     lastVideoSwitchAt: '',
+    lastInboxCheckAt: '',
+    lastCandidatePickAt: '',
     videos: {},
     ...(payload.runtime || {}),
   };
@@ -205,7 +246,7 @@ function normalizeRuntime(runtime) {
     lastVideoActionAt: '',
     lastVideoSwitchAt: '',
     lastInboxCheckAt: '',
-    lastDiscoveryAt: '',
+    lastCandidatePickAt: '',
     videos: {},
     ...(runtime || {}),
   };
@@ -229,7 +270,7 @@ function updatePhaseStatuses(phases, currentPhaseId) {
   });
 }
 
-function buildCampaignPlan({ productSlug, hours = 3, scheme = 'scheme1' }) {
+function buildCampaignPlan({ productSlug, hours = 3, scheme = 'candidate-pool-v1' }) {
   const product = summarizeProduct(productSlug);
   if (!product) {
     throw new CliError(`未找到产品资料：${productSlug}`);
@@ -239,7 +280,7 @@ function buildCampaignPlan({ productSlug, hours = 3, scheme = 'scheme1' }) {
   const durationHours = clamp(Number(hours || 3), 1, 72);
   const durationSec = durationHours * 3600;
   const budget = buildBudgetSummary({ preset, durationHours, settings });
-  const discoverCycles = Math.max(Math.floor(durationSec / preset.cadence.discoverVideoEverySec), 1);
+  const candidatePickCycles = Math.max(Math.floor(durationSec / preset.cadence.pickCandidateEverySec), 1);
   const inboxChecks = Math.max(Math.floor(durationSec / preset.cadence.checkInboxEverySec), 1);
 
   return {
@@ -259,8 +300,8 @@ function buildCampaignPlan({ productSlug, hours = 3, scheme = 'scheme1' }) {
       userInput: '用户只需要提供产品名或 slug，以及推广时长。',
       agentLoop: [
         '读取产品资料和资源图，不要脱离产品上下文。',
-        '不要把搜索当主动作；先处理当前聚焦视频和 inbox，只有当前视频价值不高时才搜索下一个。',
-        '优先挑播放量、收藏量、互动质量都更高的视频候选，不要在低播放视频上浪费动作预算。',
+        '不要把搜索当主动作；先处理当前聚焦视频和 inbox，只有当前视频价值不高时才切到候选池里的下一个。',
+        '优先挑播放量、收藏量、互动质量都更高的候选视频，不要在低播放视频上浪费动作预算。',
         '先判断当前视频评论区质量和与产品的相关度，再决定是否停留更久。',
         '带 campaign 的公开动作按当前 campaign 的预算和视频节奏执行，不走普通模式的全局公开护栏。',
         '如果评论区质量高，可以在同一视频下停留更久，持续回复更多高意向评论。',
@@ -277,7 +318,7 @@ function buildCampaignPlan({ productSlug, hours = 3, scheme = 'scheme1' }) {
       ],
     },
     pacing: {
-      discoveryEverySec: preset.cadence.discoverVideoEverySec,
+      candidatePickEverySec: preset.cadence.pickCandidateEverySec,
       inboxCheckEverySec: preset.cadence.checkInboxEverySec,
       commentReplyMinGapSec: Math.max(
         Number(preset.cadence.commentReplyMinGapSec || 20),
@@ -290,7 +331,7 @@ function buildCampaignPlan({ productSlug, hours = 3, scheme = 'scheme1' }) {
       nonCampaignPublicSafetyGateSec: Number(settings.publicCommentMinGapSec || 180),
     },
     budgets: {
-      discoverCycles,
+      candidatePickCycles,
       inboxChecks,
       perHour: budget.perHour,
       total: budget.total,
@@ -312,8 +353,9 @@ function buildCampaignPlan({ productSlug, hours = 3, scheme = 'scheme1' }) {
         `node scripts/bili.js watch run --interval-sec ${preset.cadence.checkInboxEverySec} --iterations 0`,
         `node scripts/bili.js inbox list --product "${product.slug}"`,
       ],
-      discovery: [
-        `node scripts/bili.js discovery videos --keyword "<product keyword>" --product "${product.slug}" --order click --days-within 30 --min-play 3000 --min-comments 3 --page-size 8 --pages 1`,
+      candidatePool: [
+        `node scripts/bili.js candidate collect --product "${product.slug}" --target-count 30`,
+        `node scripts/bili.js candidate next --product "${product.slug}" --campaign "<campaign_id>"`,
       ],
     },
     operatorRules: [
@@ -387,28 +429,26 @@ function buildTouchedUsers(operations) {
 }
 
 function campaignWindowOperations(campaign) {
-  const sinceMs = Date.parse(String(campaign.createdAt || '')) || 0;
+  const sinceMs = parseTime(campaign.createdAt);
   const recent = readRecentOperations(2000).filter((item) => {
-    const ts = Date.parse(String(item.ts || '')) || 0;
+    const ts = parseTime(item.ts);
     return ts >= sinceMs && item.status === 'ok';
   });
   const campaignSpecific = filterOperationsByCampaign(recent, campaign.id);
   return campaignSpecific.length ? campaignSpecific : recent;
 }
 
-function summarizeExecution(campaign) {
+function summarizeExecution(campaign, now = Date.now()) {
   const operations = campaignWindowOperations(campaign);
-  const commentOps = operations.filter((item) => item.command?.resource === 'comment' && item.command?.action === 'send');
-  const threadCommentOps = operations.filter((item) => item.command?.resource === 'thread' && item.command?.action === 'send' && item.payload?.data?.channel === 'comment');
-  const publicOps = [...commentOps, ...threadCommentOps];
-  const dmOps = operations.filter((item) => {
-    const resource = item.command?.resource;
-    const action = item.command?.action;
-    if (resource === 'dm' && (action === 'send' || action === 'send-image')) {
-      return true;
-    }
-    return resource === 'thread' && action === 'send' && item.payload?.data?.channel === 'dm';
-  });
+  const publicOps = operations.filter(
+    (item) => item.command?.resource === 'thread' && item.command?.action === 'send' && item.payload?.data?.channel === 'comment'
+  );
+  const dmOps = operations.filter(
+    (item) => item.command?.resource === 'thread' && item.command?.action === 'send' && item.payload?.data?.channel === 'dm'
+  );
+  const candidateOps = operations.filter(
+    (item) => item.command?.resource === 'candidate' && item.command?.action === 'next'
+  );
 
   let rootComments = 0;
   let commentReplies = 0;
@@ -421,9 +461,25 @@ function summarizeExecution(campaign) {
     }
   }
 
+  const hourAgo = now - 60 * 60 * 1000;
+  const recentWindow = operations.filter((item) => parseTime(item.ts) >= hourAgo);
+  const recentPublicOps = publicOps.filter((item) => parseTime(item.ts) >= hourAgo);
+  const recentDmOps = dmOps.filter((item) => parseTime(item.ts) >= hourAgo);
+  const recentCandidateOps = candidateOps.filter((item) => parseTime(item.ts) >= hourAgo);
+  const recentRootComments = recentPublicOps.filter((item) => {
+    const hasRoot = Boolean(item.command?.options?.root || item.payload?.data?.commentTarget?.root);
+    return !hasRoot;
+  });
+  const recentReplies = recentPublicOps.filter((item) => {
+    const hasRoot = Boolean(item.command?.options?.root || item.payload?.data?.commentTarget?.root);
+    return hasRoot;
+  });
+  const recentTouches = recentWindow.filter((item) => item.command?.resource === 'thread' && item.command?.action === 'send');
+
   return {
     operations,
     metrics: {
+      candidatePicks: candidateOps.length,
       publicComments: rootComments,
       publicReplies: commentReplies,
       dms: dmOps.length,
@@ -431,13 +487,30 @@ function summarizeExecution(campaign) {
       touchedVideos: buildTouchedVideos(publicOps),
       touchedUsers: buildTouchedUsers(dmOps),
       recentOperationCount: operations.length,
+      currentHour: {
+        videoCandidates: recentCandidateOps.length,
+        rootComments: recentRootComments.length,
+        commentReplies: recentReplies.length,
+        dms: recentDmOps.length,
+        totalTouches: recentTouches.length,
+        nextWindowOpenAt: {
+          videoCandidates: nextWindowOpenAt(recentCandidateOps, now),
+          rootComments: nextWindowOpenAt(recentRootComments, now),
+          commentReplies: nextWindowOpenAt(recentReplies, now),
+          dms: nextWindowOpenAt(recentDmOps, now),
+          totalTouches: nextWindowOpenAt(recentTouches, now),
+        },
+      },
     },
   };
 }
 
 function inferPhase(campaign, metrics) {
-  if (!metrics.totalTouches) {
+  if (!metrics.totalTouches && !metrics.candidatePicks) {
     return 'prepare';
+  }
+  if (metrics.candidatePicks && !metrics.publicComments && !metrics.publicReplies && !metrics.dms) {
+    return 'pick_candidate';
   }
   if (metrics.publicComments || metrics.publicReplies) {
     return 'engage_public';
@@ -452,7 +525,7 @@ function summarizeBudgetState(campaign, metrics) {
   let perHour = campaign.plan?.budgets?.perHour || {};
   let total = campaign.plan?.budgets?.total || {};
   if (!Object.keys(total).length) {
-    const preset = schemePreset(campaign.summary?.scheme || 'scheme1');
+    const preset = schemePreset(campaign.summary?.scheme || 'candidate-pool-v1');
     const settings = readEngagementSettings();
     const durationHours = clamp(Number(campaign.summary?.hours || campaign.plan?.duration?.hours || 3), 1, 72);
     const fallbackBudget = buildBudgetSummary({ preset, durationHours, settings });
@@ -463,67 +536,400 @@ function summarizeBudgetState(campaign, metrics) {
     perHour,
     total,
     consumed: {
+      videoCandidates: metrics.candidatePicks,
       rootComments: metrics.publicComments,
       commentReplies: metrics.publicReplies,
       dms: metrics.dms,
       totalTouches: metrics.totalTouches,
     },
     remaining: {
+      videoCandidates: Math.max(Number(total.videoCandidates || 0) - metrics.candidatePicks, 0),
       rootComments: Math.max(Number(total.rootComments || 0) - metrics.publicComments, 0),
       commentReplies: Math.max(Number(total.commentReplies || 0) - metrics.publicReplies, 0),
       dms: Math.max(Number(total.dms || 0) - metrics.dms, 0),
       totalTouches: Math.max(Number(total.totalTouches || 0) - metrics.totalTouches, 0),
     },
+    currentHour: {
+      consumed: {
+        videoCandidates: Number(metrics.currentHour?.videoCandidates || 0),
+        rootComments: Number(metrics.currentHour?.rootComments || 0),
+        commentReplies: Number(metrics.currentHour?.commentReplies || 0),
+        dms: Number(metrics.currentHour?.dms || 0),
+        totalTouches: Number(metrics.currentHour?.totalTouches || 0),
+      },
+      remaining: {
+        videoCandidates: Math.max(Number(perHour.videoCandidates || 0) - Number(metrics.currentHour?.videoCandidates || 0), 0),
+        rootComments: Math.max(Number(perHour.rootComments || 0) - Number(metrics.currentHour?.rootComments || 0), 0),
+        commentReplies: Math.max(Number(perHour.commentReplies || 0) - Number(metrics.currentHour?.commentReplies || 0), 0),
+        dms: Math.max(Number(perHour.dms || 0) - Number(metrics.currentHour?.dms || 0), 0),
+        totalTouches: Math.max(Number(perHour.totalTouches || 0) - Number(metrics.currentHour?.totalTouches || 0), 0),
+      },
+      nextWindowOpenAt: {
+        videoCandidates: metrics.currentHour?.nextWindowOpenAt?.videoCandidates || '',
+        rootComments: metrics.currentHour?.nextWindowOpenAt?.rootComments || '',
+        commentReplies: metrics.currentHour?.nextWindowOpenAt?.commentReplies || '',
+        dms: metrics.currentHour?.nextWindowOpenAt?.dms || '',
+        totalTouches: metrics.currentHour?.nextWindowOpenAt?.totalTouches || '',
+      },
+    },
   };
 }
 
-function buildCampaignStatus(campaignOrId) {
+function buildInboxPressure({ campaign, runtime, settings, now }) {
+  const productSlug = String(campaign.summary?.productSlug || '').trim();
+  const lastInboxCheckMs = parseTime(runtime.lastInboxCheckAt);
+  const items = listConversations()
+    .map((conversation) => ({
+      conversation,
+      schedule: summarizeSchedule(conversation, settings, now),
+    }))
+    .filter(({ conversation, schedule }) => {
+      const lastOutboundProduct = String(conversation.lastOutbound?.productSlug || '').trim();
+      const productMatched = !productSlug || !lastOutboundProduct || lastOutboundProduct === productSlug;
+      if (!productMatched) {
+        return false;
+      }
+      if (Number(conversation.unreadCount || 0) > 0) {
+        return true;
+      }
+      const lastInboundMs = parseTime(conversation.lastInboundAt || conversation.updatedAt || '');
+      if (conversation.lastInbound?.type === 'comment_reply_notification' && (!lastInboxCheckMs || lastInboundMs > lastInboxCheckMs)) {
+        return true;
+      }
+      return schedule.cooldownReason === 'await_reply';
+    })
+    .sort((a, b) => {
+      const unreadDiff = Number(b.conversation.unreadCount || 0) - Number(a.conversation.unreadCount || 0);
+      if (unreadDiff) {
+        return unreadDiff;
+      }
+      return parseTime(b.conversation.lastInboundAt || b.conversation.updatedAt || '') - parseTime(a.conversation.lastInboundAt || a.conversation.updatedAt || '');
+    });
+  return {
+    requiresAttention: items.length > 0,
+    items: items.slice(0, 5).map(({ conversation, schedule }) => ({
+      mid: String(conversation.mid || ''),
+      nickname: conversation.nickname || '',
+      unreadCount: Number(conversation.unreadCount || 0),
+      lastInboundType: conversation.lastInbound?.type || '',
+      lastInboundAt: conversation.lastInboundAt || '',
+      cooldownReason: schedule.cooldownReason || '',
+    })),
+  };
+}
+
+function summarizeActiveVideo(runtime, plan, now) {
+  const activeVideoId = String(runtime.activeVideoId || '').trim();
+  if (!activeVideoId) {
+    return {
+      active: false,
+      videoId: '',
+      dwellExpired: false,
+      maxStayUntil: '',
+      reason: '',
+      state: null,
+      qualityTier: '',
+      budget: null,
+    };
+  }
+  const state = runtime.videos?.[activeVideoId] || null;
+  const qualityTier = normalizeQualityTier(state?.qualityTier || runtime.activeVideoQuality || 'medium');
+  const budget = getPerVideoBudget(plan, qualityTier);
+  const firstSeenAt = state?.firstSeenAt || runtime.lastCandidatePickAt || runtime.lastVideoSwitchAt || '';
+  const maxStayMinutes = Math.max(...(budget?.stayMinutes || [0, 0]));
+  const maxStayUntil = firstSeenAt && maxStayMinutes > 0
+    ? new Date(parseTime(firstSeenAt) + maxStayMinutes * 60 * 1000).toISOString()
+    : '';
+  const dwellExpired = Boolean(maxStayUntil && parseTime(maxStayUntil) <= now);
+  return {
+    active: true,
+    videoId: activeVideoId,
+    dwellExpired,
+    maxStayUntil,
+    reason: state?.reason || runtime.activeVideoReason || '',
+    state,
+    qualityTier,
+    budget,
+  };
+}
+
+function buildIntentSignal({ targetMid = '', threadContext = null }) {
+  const inboundText = String(
+    threadContext?.conversationSummary?.lastInboundMessage ||
+    threadContext?.replyNotifications?.[0]?.item?.targetReplyContent ||
+    threadContext?.dmHistory?.items?.slice(-1)?.[0]?.content?.content ||
+    ''
+  ).trim();
+  const hasExistingDm = Boolean(threadContext?.dmSession || (threadContext?.dmHistory?.items || []).length);
+  const highIntentPattern = /(怎么联系|如何联系|怎么加|如何加|资料|群|vx|v信|微信|私信你|联系你|想试|想用|长期用|长期使用|合作|报价|多少钱|价格|套餐|购买|资源)/i;
+  if (hasExistingDm || highIntentPattern.test(inboundText)) {
+    return {
+      level: 'high',
+      reasons: hasExistingDm ? ['已存在私信上下文。'] : ['用户表达了明确的联系方式、试用、购买或资源需求。'],
+      latestInboundText: inboundText,
+      targetMid: String(targetMid || ''),
+    };
+  }
+  if (inboundText) {
+    return {
+      level: 'medium',
+      reasons: ['已有互动上下文，但尚未达到明确私信升级信号。'],
+      latestInboundText: inboundText,
+      targetMid: String(targetMid || ''),
+    };
+  }
+  return {
+    level: 'low',
+    reasons: ['当前缺少可用于升级私信的明确上下文。'],
+    latestInboundText: '',
+    targetMid: String(targetMid || ''),
+  };
+}
+
+function buildCampaignEvaluation(campaignOrId, options = {}) {
   const campaign = typeof campaignOrId === 'string' ? readCampaign(campaignOrId) : campaignOrId;
   if (!campaign) {
     throw new CliError('未找到 campaign。');
   }
+
+  const actionKind = String(options.actionKind || '').trim();
+  const videoId = String(options.videoId || '').trim();
+  const commentTarget = options.commentTarget || null;
+  const videoQuality = normalizeQualityTier(options.videoQuality || 'medium');
+  const targetMid = String(options.targetMid || '').trim();
+  const threadContext = options.threadContext || null;
   const settings = readEngagementSettings();
-  const execution = summarizeExecution(campaign);
+  const now = Date.now();
+  const execution = summarizeExecution(campaign, now);
   const budget = summarizeBudgetState(campaign, execution.metrics);
-  const publicThrottle = getPublicSendThrottleStatus(settings);
   const phase = inferPhase(campaign, execution.metrics);
-  const startMs = Date.parse(String(campaign.createdAt || '')) || Date.now();
+  const startMs = parseTime(campaign.createdAt) || now;
   const durationMs = Number(campaign.plan?.duration?.seconds || 0) * 1000;
   const endMs = durationMs ? startMs + durationMs : 0;
-  const now = Date.now();
   const remainingRuntimeMs = endMs ? Math.max(endMs - now, 0) : 0;
-
-  const blockedReasons = [];
-  if (publicThrottle.blocked) {
-    blockedReasons.push(`公开动作节流：${publicThrottle.reason || 'throttled'}`);
-  }
-  if (budget.remaining.totalTouches <= 0) {
-    blockedReasons.push('任务预算已耗尽');
-  }
-
-  const nextAction = blockedReasons.length
-    ? '暂停新增公开动作，优先 inbox、thread continue 和复盘。'
-    : phase === 'prepare'
-      ? '先确认产品资料、登录态和 watcher 已就绪，再开始第一轮探索。'
-      : phase === 'engage_public'
-        ? '当前已有公开动作，先看当前视频评论区和 inbox，不要急着继续搜索新视频。'
-        : phase === 'engage_dm'
-          ? '当前已进入私信阶段，优先继续已有会话，不要继续扩大触达面。'
-          : '优先继续 watch 和 inbox，等待新的用户反馈。';
-
   const runtime = normalizeRuntime(campaign.runtime);
+  const currentVideo = summarizeActiveVideo(runtime, campaign.plan, now);
+  const inboxPressure = buildInboxPressure({ campaign, runtime, settings, now });
+  const nonCampaignPublicThrottle = getPublicSendThrottleStatus(settings);
+  const blockedReasons = [];
+  let primaryAction = null;
+
+  if (remainingRuntimeMs <= 0) {
+    blockedReasons.push('campaign 运行时长已结束');
+    primaryAction = {
+      kind: 'review',
+      title: '结束当前 campaign 并复盘',
+      reason: '当前 campaign 已达到计划运行时长。',
+      command: `node scripts/bili.js campaign status --id "${campaign.id}"`,
+    };
+  } else if (budget.remaining.totalTouches <= 0) {
+    blockedReasons.push('任务总预算已耗尽');
+    primaryAction = {
+      kind: 'review',
+      title: '停止新增动作并进入复盘',
+      reason: '当前 campaign 的总触达预算已经用完。',
+      command: `node scripts/bili.js campaign status --id "${campaign.id}"`,
+    };
+  } else if (inboxPressure.requiresAttention) {
+    blockedReasons.push('存在未处理的 inbox 线索，优先跟进');
+    primaryAction = {
+      kind: 'inbox',
+      title: '优先处理收件箱与评论回复',
+      reason: '检测到未读私信、评论回复或等待回复线程。',
+      command: `node scripts/bili.js inbox list --product "${campaign.summary?.productSlug || ''}" --campaign "${campaign.id}"`,
+    };
+  } else if (!currentVideo.active) {
+    const candidatePickGapUntil = addSeconds(runtime.lastCandidatePickAt, Number(campaign.plan?.pacing?.candidatePickEverySec || 120));
+    if (budget.currentHour.remaining.videoCandidates <= 0) {
+      blockedReasons.push('当前小时的视频候选预算已耗尽');
+      primaryAction = {
+        kind: 'cooldown',
+        title: '等待下一轮候选视频窗口',
+        reason: '当前小时候选视频切换次数已经达到上限。',
+        command: `node scripts/bili.js campaign status --id "${campaign.id}"`,
+        notBefore: budget.currentHour.nextWindowOpenAt.videoCandidates || '',
+      };
+    } else if (candidatePickGapUntil && parseTime(candidatePickGapUntil) > now) {
+      blockedReasons.push('当前还处在候选视频切换间隔内');
+      primaryAction = {
+        kind: 'cooldown',
+        title: '等待候选视频切换窗口',
+        reason: '候选视频切换频率过高，暂不建议继续拿下一个视频。',
+        command: `node scripts/bili.js campaign status --id "${campaign.id}"`,
+        notBefore: candidatePickGapUntil,
+      };
+    } else {
+      primaryAction = {
+        kind: 'candidate-next',
+        title: '从候选池预留下一个视频',
+        reason: '当前没有聚焦视频，可以进入下一轮公开视频选择。',
+        command: `node scripts/bili.js candidate next --product "${campaign.summary?.productSlug || ''}" --campaign "${campaign.id}"`,
+      };
+    }
+  } else if (currentVideo.dwellExpired) {
+    const hopUntil = addSeconds(runtime.lastVideoActionAt, Number(campaign.plan?.pacing?.betweenVideoHopSec?.min || 60));
+    if (hopUntil && parseTime(hopUntil) > now) {
+      blockedReasons.push('当前视频已到停留上限，且跨视频缓冲尚未结束');
+      primaryAction = {
+        kind: 'cooldown',
+        title: '等待跨视频缓冲结束',
+        reason: '当前视频停留已到上限，下一步应换视频，但还处在跨视频缓冲期。',
+        command: `node scripts/bili.js campaign status --id "${campaign.id}"`,
+        notBefore: hopUntil,
+      };
+    } else {
+      primaryAction = {
+        kind: 'candidate-next',
+        title: '切换到下一个候选视频',
+        reason: '当前视频停留时间已到上限，应结束当前视频的公开互动。',
+        command: `node scripts/bili.js candidate next --product "${campaign.summary?.productSlug || ''}" --campaign "${campaign.id}"`,
+      };
+    }
+  } else {
+    const sameVideoGapUntil = addSeconds(runtime.lastVideoActionAt, Number(campaign.plan?.pacing?.commentReplyMinGapSec || 20));
+    if (sameVideoGapUntil && parseTime(sameVideoGapUntil) > now) {
+      blockedReasons.push('当前视频的公开互动仍在最小间隔窗口内');
+      primaryAction = {
+        kind: 'cooldown',
+        title: '等待当前视频公开互动间隔',
+        reason: '当前视频仍可继续处理，但还没到下一次公开视频动作时间。',
+        command: `node scripts/bili.js campaign focus --id "${campaign.id}" --video "${currentVideo.videoId}" --video-quality ${currentVideo.qualityTier || 'medium'}`,
+        notBefore: sameVideoGapUntil,
+      };
+    } else {
+      primaryAction = {
+        kind: 'focus-video',
+        title: '继续处理当前聚焦视频',
+        reason: currentVideo.reason || '当前视频仍在允许停留窗口内。',
+        command: `node scripts/bili.js campaign focus --id "${campaign.id}" --video "${currentVideo.videoId}" --video-quality ${currentVideo.qualityTier || 'medium'}`,
+      };
+    }
+  }
+
+  if (actionKind === 'pickCandidate') {
+    if (inboxPressure.requiresAttention) {
+      throw new CliError(
+        '当前存在未处理的 inbox 线索，候选视频选择已被收件箱优先级拦截。',
+        1,
+        { campaignId: campaign.id, inboxPressure, primaryAction },
+        '先执行 `inbox list` / `thread continue` 处理当前消息，再继续候选视频选择。'
+      );
+    }
+    if (currentVideo.active && !currentVideo.dwellExpired) {
+      throw new CliError(
+        '当前仍有聚焦视频可继续处理，不建议现在切到下一个候选视频。',
+        1,
+        { campaignId: campaign.id, currentVideo, primaryAction },
+        '优先继续当前视频，只有停留上限到了或你明确决定放弃当前视频时再切换。'
+      );
+    }
+    if (budget.currentHour.remaining.videoCandidates <= 0) {
+      throw new CliError(
+        '当前小时的视频候选预算已经耗尽。',
+        1,
+        { campaignId: campaign.id, budget, primaryAction },
+        `建议至少等到 ${budget.currentHour.nextWindowOpenAt.videoCandidates || '下一小时窗口'} 再继续选择候选视频。`
+      );
+    }
+  }
+
+  if (actionKind === 'rootComment' || actionKind === 'commentReply' || actionKind === 'dm') {
+    if (budget.currentHour.remaining.totalTouches <= 0) {
+      throw new CliError(
+        '当前小时的总触达预算已经耗尽。',
+        1,
+        { campaignId: campaign.id, budget, primaryAction },
+        `建议至少等到 ${budget.currentHour.nextWindowOpenAt.totalTouches || '下一小时窗口'} 再继续执行新的触达动作。`
+      );
+    }
+  }
+
+  if (actionKind === 'rootComment' && budget.currentHour.remaining.rootComments <= 0) {
+    throw new CliError(
+      '当前小时的主评论预算已经耗尽。',
+      1,
+      { campaignId: campaign.id, budget, primaryAction },
+      `建议至少等到 ${budget.currentHour.nextWindowOpenAt.rootComments || '下一小时窗口'} 再继续发新的主评论。`
+    );
+  }
+
+  if (actionKind === 'commentReply' && budget.currentHour.remaining.commentReplies <= 0) {
+    throw new CliError(
+      '当前小时的评论回复预算已经耗尽。',
+      1,
+      { campaignId: campaign.id, budget, primaryAction },
+      `建议至少等到 ${budget.currentHour.nextWindowOpenAt.commentReplies || '下一小时窗口'} 再继续评论区回复。`
+    );
+  }
+
+  if (actionKind === 'dm' && budget.currentHour.remaining.dms <= 0) {
+    throw new CliError(
+      '当前小时的私信预算已经耗尽。',
+      1,
+      { campaignId: campaign.id, budget, primaryAction },
+      `建议至少等到 ${budget.currentHour.nextWindowOpenAt.dms || '下一小时窗口'} 再继续私信。`
+    );
+  }
+
+  if ((actionKind === 'rootComment' || actionKind === 'commentReply' || actionKind === 'pickCandidate') && inboxPressure.requiresAttention) {
+    throw new CliError(
+      '当前 campaign 已检测到需要优先处理的收件箱线索，公开动作已被暂时拦截。',
+      1,
+      { campaignId: campaign.id, inboxPressure, primaryAction },
+      '先执行 `inbox list` / `thread continue` 处理已有线索，再继续公开触达。'
+    );
+  }
+
+  if (actionKind === 'dm') {
+    const signal = buildIntentSignal({ targetMid, threadContext });
+    if (signal.level !== 'high') {
+      throw new CliError(
+        '当前线索尚未达到可升级私信的高意向门槛。',
+        1,
+        { campaignId: campaign.id, intent: signal, primaryAction },
+        '中意向线索优先继续公开回复；只有高意向或已存在私信上下文时再升级到私信。'
+      );
+    }
+  }
+
+  return {
+    campaign,
+    execution,
+    budget,
+    runtime,
+    phase,
+    remainingRuntimeSec: Math.floor(remainingRuntimeMs / 1000),
+    inboxPressure,
+    currentVideo,
+    nonCampaignPublicThrottle,
+    blockedReasons,
+    primaryAction,
+  };
+}
+
+function buildCampaignStatus(campaignOrId) {
+  const evaluation = buildCampaignEvaluation(campaignOrId);
+  const campaign = evaluation.campaign;
+  const runtime = evaluation.runtime || {};
   const currentVideoState = runtime.activeVideoId ? runtime.videos?.[runtime.activeVideoId] || null : null;
+  const suggestedCommands = [
+    `node scripts/bili.js campaign status --id "${campaign.id}"`,
+    evaluation.primaryAction?.command || `node scripts/bili.js inbox list --product "${campaign.summary?.productSlug || ''}" --campaign "${campaign.id}"`,
+    `node scripts/bili.js inbox list --product "${campaign.summary?.productSlug || ''}" --campaign "${campaign.id}"`,
+  ].filter(Boolean);
 
   return {
     ...campaign,
     statusSummary: {
-      phase,
-      remainingRuntimeSec: Math.floor(remainingRuntimeMs / 1000),
-      publicThrottle,
-      blockedReasons,
-      nextAction,
+      phase: evaluation.phase,
+      remainingRuntimeSec: evaluation.remainingRuntimeSec,
+      publicThrottle: evaluation.nonCampaignPublicThrottle,
+      blockedReasons: evaluation.blockedReasons,
+      nextAction: evaluation.primaryAction?.title || '继续按 campaign 节奏执行。',
+      nextActionReason: evaluation.primaryAction?.reason || '',
+      nextActionNotBefore: evaluation.primaryAction?.notBefore || '',
     },
-    budget,
+    budget: evaluation.budget,
     pacing: campaign.plan?.pacing || {},
     runtime,
     focus: {
@@ -532,25 +938,17 @@ function buildCampaignStatus(campaignOrId) {
       activeVideoReason: runtime.activeVideoReason || '',
       currentVideoState,
       lastInboxCheckAt: runtime.lastInboxCheckAt || '',
-      lastDiscoveryAt: runtime.lastDiscoveryAt || '',
+      lastCandidatePickAt: runtime.lastCandidatePickAt || '',
+      dwellExpired: evaluation.currentVideo?.dwellExpired || false,
+      maxStayUntil: evaluation.currentVideo?.maxStayUntil || '',
     },
-    suggestedCommands: blockedReasons.length
-      ? [
-          `node scripts/bili.js campaign status --id "${campaign.id}"`,
-          'node scripts/bili.js inbox list --product "<slug>"',
-          'node scripts/bili.js thread continue --mid <mid> --product "<slug>"',
-        ]
-      : [
-          `node scripts/bili.js campaign status --id "${campaign.id}"`,
-          runtime.activeVideoId
-            ? `node scripts/bili.js discovery comments --id "${runtime.activeVideoId}" --product "${campaign.summary?.productSlug || ''}" --pages 1 --size 20`
-            : `node scripts/bili.js discovery videos --keyword "<product keyword>" --product "${campaign.summary?.productSlug || ''}" --order click --days-within 30 --min-play 3000 --min-comments 3 --page-size 8 --pages 1`,
-          `node scripts/bili.js inbox list --product "${campaign.summary?.productSlug || ''}"`,
-        ],
+    inboxPressure: evaluation.inboxPressure,
+    primaryAction: evaluation.primaryAction,
+    suggestedCommands,
     execution: {
-      metrics: execution.metrics,
-      topVideos: execution.metrics.touchedVideos.slice(0, 10),
-      topUsers: execution.metrics.touchedUsers.slice(0, 20),
+      metrics: evaluation.execution.metrics,
+      topVideos: evaluation.execution.metrics.touchedVideos.slice(0, 10),
+      topUsers: evaluation.execution.metrics.touchedUsers.slice(0, 20),
     },
   };
 }
@@ -564,40 +962,13 @@ function buildCampaignNext(campaignOrId) {
   const runtime = status.runtime || {};
   const nextSteps = [];
 
-  if (blocked.length) {
+  if (status.primaryAction) {
     nextSteps.push({
-      kind: 'cooldown',
-      title: '先暂停新增公开动作',
-      reason: blocked.join('；'),
-      command: `node scripts/bili.js inbox list --product "${productSlug}" --campaign "${campaignId}"`,
-    });
-    nextSteps.push({
-      kind: 'status',
-      title: '查看当前 campaign 状态',
-      command: `node scripts/bili.js campaign status --id "${campaignId}"`,
-    });
-  } else if (focus.activeVideoId) {
-    nextSteps.push({
-      kind: 'focus-video',
-      title: '继续处理当前聚焦视频',
-      reason: focus.activeVideoReason || '当前视频仍在停留期内',
-      command: `node scripts/bili.js discovery comments --id "${focus.activeVideoId}" --product "${productSlug}" --campaign "${campaignId}" --video-quality ${focus.activeVideoQuality || 'medium'} --pages 1 --size 20`,
-    });
-    nextSteps.push({
-      kind: 'inbox',
-      title: '检查是否有新回复需要优先处理',
-      command: `node scripts/bili.js inbox list --product "${productSlug}" --campaign "${campaignId}"`,
-    });
-  } else {
-    nextSteps.push({
-      kind: 'discover-video',
-      title: '先找下一个候选视频',
-      command: `node scripts/bili.js discovery videos --keyword "<product keyword>" --product "${productSlug}" --campaign "${campaignId}" --order click --days-within 30 --min-play 3000 --min-comments 3 --page-size 8 --pages 1`,
-    });
-    nextSteps.push({
-      kind: 'inbox',
-      title: '同时检查当前是否有新消息',
-      command: `node scripts/bili.js inbox list --product "${productSlug}" --campaign "${campaignId}"`,
+      kind: status.primaryAction.kind,
+      title: status.primaryAction.title,
+      reason: status.primaryAction.reason || blocked.join('；'),
+      command: status.primaryAction.command,
+      notBefore: status.primaryAction.notBefore || '',
     });
   }
 
@@ -614,6 +985,8 @@ function buildCampaignNext(campaignOrId) {
     productSlug,
     phase: status.statusSummary?.phase || '',
     blockedReasons: blocked,
+    notBefore: status.primaryAction?.notBefore || '',
+    primaryAction: status.primaryAction || null,
     focus,
     nextSteps,
   };
@@ -626,22 +999,28 @@ function campaignActionKind({ channel, commentTarget }) {
   return commentTarget?.root ? 'commentReply' : 'rootComment';
 }
 
-function assertCampaignSendAllowed({ campaignId: id, channel, videoId = '', commentTarget = null, videoQuality = 'medium' }) {
+function assertCampaignSendAllowed({ campaignId: id, channel, videoId = '', commentTarget = null, videoQuality = 'medium', targetMid = '', threadContext = null }) {
   const target = String(id || '').trim();
   if (!target) {
     return null;
   }
-  const campaign = readCampaign(target);
-  if (!campaign) {
-    throw new CliError(`未找到 campaign：${target}`);
-  }
-  const status = buildCampaignStatus(campaign);
+
   const kind = campaignActionKind({ channel, commentTarget });
+  const evaluation = buildCampaignEvaluation(target, {
+    actionKind: kind,
+    videoId,
+    commentTarget,
+    videoQuality,
+    targetMid,
+    threadContext,
+  });
+  const campaign = evaluation.campaign;
+  const status = buildCampaignStatus(campaign);
   const remaining = status.budget?.remaining || {};
   const runtime = normalizeRuntime(campaign.runtime);
   const now = Date.now();
   const qualityTier = normalizeQualityTier(videoQuality);
-  const perVideoBudget = status.plan?.budgets?.perVideoQualityBudget?.[qualityTier] || status.plan?.budgets?.perVideoQualityBudget?.medium || null;
+  const perVideoBudget = getPerVideoBudget(status.plan, qualityTier);
 
   if (remaining.totalTouches <= 0) {
     throw new CliError(
@@ -719,6 +1098,19 @@ function assertCampaignSendAllowed({ campaignId: id, channel, videoId = '', comm
       );
     }
 
+    if (evaluation.currentVideo?.videoId === targetVideo && evaluation.currentVideo?.dwellExpired) {
+      throw new CliError(
+        '当前视频已经达到允许停留上限，不建议继续在这个视频下执行公开动作。',
+        1,
+        {
+          campaignId: target,
+          videoId: targetVideo,
+          currentVideo: evaluation.currentVideo,
+        },
+        '优先切到下一个候选视频，或先处理 inbox 里的已有线索。'
+      );
+    }
+
     if (activeVideoId && activeVideoId === targetVideo && lastVideoActionMs && now - lastVideoActionMs < minReplyGapSec * 1000) {
       throw new CliError(
         '当前 campaign 在同一个视频里的公开互动间隔过短。',
@@ -757,6 +1149,22 @@ function assertCampaignSendAllowed({ campaignId: id, channel, videoId = '', comm
   };
 }
 
+function assertCampaignCandidatePickAllowed({ campaignId: id }) {
+  const target = String(id || '').trim();
+  if (!target) {
+    return null;
+  }
+  const evaluation = buildCampaignEvaluation(target, {
+    actionKind: 'pickCandidate',
+  });
+  return {
+    campaignId: target,
+    campaign: evaluation.campaign,
+    primaryAction: evaluation.primaryAction,
+    status: buildCampaignStatus(evaluation.campaign),
+  };
+}
+
 function recordCampaignSend({ campaignId: id, channel, videoId = '', commentTarget = null, videoQuality = 'medium' }) {
   const target = String(id || '').trim();
   if (!target) {
@@ -772,14 +1180,13 @@ function recordCampaignSend({ campaignId: id, channel, videoId = '', commentTarg
   const qualityTier = normalizeQualityTier(videoQuality);
   if (channel === 'comment' && targetVideo) {
     const switchingVideo = runtime.activeVideoId && runtime.activeVideoId !== targetVideo;
-    if (switchingVideo) {
-      runtime.lastVideoSwitchAt = ts;
-    }
     runtime.activeVideoId = targetVideo;
     runtime.activeVideoQuality = qualityTier;
     runtime.lastVideoActionAt = ts;
+    runtime.lastVideoSwitchAt = switchingVideo ? ts : runtime.lastVideoSwitchAt || '';
     runtime.videos[targetVideo] = {
       firstSeenAt: runtime.videos[targetVideo]?.firstSeenAt || ts,
+      lastSeenAt: ts,
       lastActionAt: ts,
       rootComments: Number(runtime.videos[targetVideo]?.rootComments || 0),
       commentReplies: Number(runtime.videos[targetVideo]?.commentReplies || 0),
@@ -819,7 +1226,7 @@ function markCampaignVideoFocus({ campaignId: id, videoId, videoQuality = 'mediu
   runtime.activeVideoId = bvid;
   runtime.activeVideoQuality = qualityTier;
   runtime.activeVideoReason = String(reason || '').trim();
-  runtime.lastDiscoveryAt = ts;
+  runtime.lastCandidatePickAt = ts;
   runtime.videos[bvid] = {
     firstSeenAt: runtime.videos[bvid]?.firstSeenAt || ts,
     lastSeenAt: ts,
@@ -830,7 +1237,7 @@ function markCampaignVideoFocus({ campaignId: id, videoId, videoQuality = 'mediu
     reason: runtime.activeVideoReason,
   };
   campaign.runtime = runtime;
-  campaign.phases = updatePhaseStatuses(campaign.phases, 'discover');
+  campaign.phases = updatePhaseStatuses(campaign.phases, 'pick_candidate');
   writeCampaign(campaign);
   return buildCampaignStatus(campaign);
 }
@@ -852,36 +1259,7 @@ function markCampaignInboxCheck({ campaignId: id }) {
   return buildCampaignStatus(campaign);
 }
 
-function assertCampaignDiscoveryAllowed({ campaignId: id, forceNextVideo = false }) {
-  const target = String(id || '').trim();
-  if (!target) {
-    return null;
-  }
-  const campaign = readCampaign(target);
-  if (!campaign) {
-    throw new CliError(`未找到 campaign：${target}`);
-  }
-  const runtime = normalizeRuntime(campaign.runtime);
-  const activeVideoId = String(runtime.activeVideoId || '').trim();
-  if (!activeVideoId || forceNextVideo) {
-    return buildCampaignStatus(campaign);
-  }
-  const currentVideoState = runtime.videos?.[activeVideoId] || {};
-  throw new CliError(
-    '当前 campaign 已经有一个活跃视频，默认不继续搜索新视频。',
-    1,
-    {
-      campaignId: target,
-      activeVideoId,
-      currentVideoState,
-      lastVideoActionAt: runtime.lastVideoActionAt || '',
-      activeVideoReason: runtime.activeVideoReason || '',
-    },
-    `先继续处理当前视频 ${activeVideoId}，只有确认这个视频评论区质量不高、已处理完，或要主动放弃时，才重新搜索；如确需切换，可追加 \`--force-next-video true\`。`
-  );
-}
-
-function runCampaign({ productSlug, hours = 3, scheme = 'scheme1' }) {
+function runCampaign({ productSlug, hours = 3, scheme = 'candidate-pool-v1' }) {
   const plan = buildCampaignPlan({ productSlug, hours, scheme });
   const id = campaignId(productSlug, scheme);
   const createdAt = nowIso();
@@ -898,7 +1276,7 @@ function runCampaign({ productSlug, hours = 3, scheme = 'scheme1' }) {
     },
     phases: [
       { id: 'prepare', title: '准备', status: 'in_progress' },
-      { id: 'discover', title: '找视频', status: 'pending' },
+      { id: 'pick_candidate', title: '选择候选视频', status: 'pending' },
       { id: 'engage_public', title: '公开互动', status: 'pending' },
       { id: 'inbox_followup', title: '回复跟进', status: 'pending' },
       { id: 'review', title: '总结复盘', status: 'pending' },
@@ -928,8 +1306,8 @@ module.exports = {
   buildCampaignNext,
   buildCampaignStatus,
   assertCampaignSendAllowed,
+  assertCampaignCandidatePickAllowed,
   markCampaignInboxCheck,
-  assertCampaignDiscoveryAllowed,
   markCampaignVideoFocus,
   recordCampaignSend,
   runCampaign,

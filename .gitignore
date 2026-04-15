@@ -7,6 +7,8 @@
 
 package-lock.json
 package.json
+!skills/bilibili-api-skill/package-lock.json
+!skills/bilibili-api-skill/package.json
 *.swp
 *.swo
 
@@ -15,3 +17,4 @@ package.json
 # But usually local user config inside .trae might be ignored.
 # For now, only ignoring .idea as requested.
 /node_modules/
+skills/bilibili-api-skill/node_modules/

@@ -3,28 +3,47 @@
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
-const { imageSize } = require('image-size');
 const { readCredentials } = require('./config');
 const { request, unwrapBiliResponse } = require('./http');
 const { requireCookie, requireCsrf } = require('./cookie');
 const { signWbiParams } = require('./wbi');
-const { MAX_SEARCH_PAGE_SIZE, DEFAULT_RE_SRC } = require('./constants');
 const {
   extractVideoId,
   normalizeVideoDetail,
-  normalizeSearchResult,
-  normalizeHotSearch,
   normalizeComments,
   normalizeCommentItem,
   normalizeMainComments,
   normalizeUserInfo,
-  normalizeAiSummary,
   normalizeReplyNotifications,
   normalizeUnreadNotifications,
   normalizeDmSessions,
   normalizeDmMessages,
 } = require('./parsers');
 const { readSession, patchSession } = require('./store');
+
+function getImageSize(fileBuffer) {
+  try {
+    const imageSizeModule = require('image-size');
+    if (typeof imageSizeModule.imageSize === 'function') {
+      return imageSizeModule.imageSize(fileBuffer);
+    }
+    if (typeof imageSizeModule === 'function') {
+      return imageSizeModule(fileBuffer);
+    }
+  } catch (error) {
+    const { CliError } = require('./errors');
+    throw new CliError(
+      '当前环境缺少 `image-size` 依赖，暂时无法处理图片上传。',
+      1,
+      {
+        dependency: 'image-size',
+        detail: error.message,
+      },
+      '候选池、campaign、watch、inbox 等纯文本流程仍可继续使用；只有图片上传/发送会受影响。'
+    );
+  }
+  return { width: 0, height: 0 };
+}
 
 class BilibiliClient {
   constructor(options = {}) {
@@ -110,97 +129,6 @@ class BilibiliClient {
     const query = id.startsWith('BV') ? { bvid: id } : { aid: id };
     const data = unwrapBiliResponse(await this.get('https://api.bilibili.com/x/web-interface/view', { query }));
     return normalizeVideoDetail(data);
-  }
-
-  async getVideoSummary(idOrUrl) {
-    const detail = await this.getVideoDetail(idOrUrl);
-    const query = await signWbiParams(
-      {
-        bvid: detail.bvid,
-        cid: detail.pages[0]?.cid || detail.cid,
-        up_mid: detail.owner?.mid || 0,
-        web_location: '333.788',
-      },
-      this
-    );
-    const data = unwrapBiliResponse(
-      await this.get('https://api.bilibili.com/x/web-interface/view/conclusion/get', { query })
-    );
-    return {
-      video: detail,
-      summary: normalizeAiSummary(data),
-    };
-  }
-
-  async likeVideo(idOrUrl, like = 1) {
-    requireCookie(this.cookie);
-    const csrf = requireCsrf(this.cookie);
-    const id = this.resolveVideoId(idOrUrl);
-    const form = {
-      like,
-      csrf,
-    };
-    if (id.startsWith('BV')) {
-      form.bvid = id;
-    } else {
-      form.aid = id;
-    }
-    unwrapBiliResponse(await this.post('https://api.bilibili.com/x/web-interface/archive/like', { form }));
-    return { success: true, id, like };
-  }
-
-  async coinVideo(idOrUrl, count = 1, alsoLike = false) {
-    requireCookie(this.cookie);
-    const csrf = requireCsrf(this.cookie);
-    const id = this.resolveVideoId(idOrUrl);
-    const form = {
-      multiply: Math.min(Math.max(count, 1), 2),
-      select_like: alsoLike ? 1 : 0,
-      csrf,
-    };
-    if (id.startsWith('BV')) {
-      form.bvid = id;
-    } else {
-      form.aid = id;
-    }
-    unwrapBiliResponse(await this.post('https://api.bilibili.com/x/web-interface/coin/add', { form }));
-    return { success: true, id, count: form.multiply, alsoLike };
-  }
-
-  async tripleVideo(idOrUrl) {
-    requireCookie(this.cookie);
-    const csrf = requireCsrf(this.cookie);
-    const id = this.resolveVideoId(idOrUrl);
-    const form = { csrf };
-    if (id.startsWith('BV')) {
-      form.bvid = id;
-    } else {
-      form.aid = id;
-    }
-    unwrapBiliResponse(await this.post('https://api.bilibili.com/x/web-interface/archive/like/triple', { form }));
-    return { success: true, id };
-  }
-
-  async searchVideos({ keyword, order = 'totalrank', duration = 0, tids = 0, page = 1, pageSize = 10 }) {
-    const query = await signWbiParams(
-      {
-        search_type: 'video',
-        keyword,
-        order,
-        duration,
-        tids,
-        page,
-        page_size: Math.min(pageSize, MAX_SEARCH_PAGE_SIZE),
-      },
-      this
-    );
-    const data = unwrapBiliResponse(await this.get('https://api.bilibili.com/x/web-interface/search/type', { query }));
-    return normalizeSearchResult(data);
-  }
-
-  async getHotSearch() {
-    const result = await this.get('https://s.search.bilibili.com/main/hotword');
-    return normalizeHotSearch(result.body);
   }
 
   async resolveOid({ oid, id }) {
@@ -326,26 +254,6 @@ class BilibiliClient {
       oid: realOid,
       rpid: String(rpid),
       action,
-    };
-  }
-
-  async followUser(mid, reSrc = DEFAULT_RE_SRC) {
-    requireCookie(this.cookie);
-    const csrf = requireCsrf(this.cookie);
-    unwrapBiliResponse(
-      await this.post('https://api.bilibili.com/x/relation/modify', {
-        form: {
-          fid: mid,
-          act: 1,
-          re_src: reSrc,
-          csrf,
-        },
-      })
-    );
-    return {
-      success: true,
-      mid: String(mid),
-      reSrc,
     };
   }
 
@@ -488,7 +396,7 @@ class BilibiliClient {
     const absolutePath = path.resolve(filePath);
     const fileBuffer = fs.readFileSync(absolutePath);
     const stats = fs.statSync(absolutePath);
-    const dimensions = imageSize(fileBuffer);
+    const dimensions = getImageSize(fileBuffer);
     const ext = path.extname(absolutePath).replace(/^\./, '').toLowerCase() || 'png';
     const mime = ext === 'jpg' ? 'image/jpeg' : ext === 'jpeg' ? 'image/jpeg' : ext === 'webp' ? 'image/webp' : ext === 'gif' ? 'image/gif' : 'image/png';
     const form = new FormData();

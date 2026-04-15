@@ -54,44 +54,6 @@ function normalizeVideoDetail(data) {
   };
 }
 
-function normalizeSearchResult(data) {
-  const result = data.result || [];
-  return {
-    page: data.page || 1,
-    pageSize: data.numPages ? result.length : result.length,
-    numPages: data.numPages || null,
-    numResults: data.numResults || null,
-    items: result.map((item) => ({
-      bvid: item.bvid,
-      aid: item.aid,
-      title: stripTags(item.title),
-      author: item.author,
-      mid: item.mid,
-      description: stripTags(item.description || ''),
-      play: item.play,
-      favorites: item.favorites,
-      duration: item.duration,
-      pubdate: item.pubdate,
-      arcurl: item.arcurl,
-    })),
-    raw: data,
-  };
-}
-
-function normalizeHotSearch(data) {
-  const list = Array.isArray(data.list) ? data.list : [];
-  return {
-    items: list.map((item) => ({
-      keyword: item.keyword,
-      showName: item.show_name,
-      icon: item.icon,
-      rank: item.pos,
-      score: item.score,
-    })),
-    raw: data,
-  };
-}
-
 function normalizeComments(data) {
   const page = data.page || {};
   const replies = Array.isArray(data.replies) ? data.replies : [];
@@ -184,15 +146,6 @@ function normalizeUserInfo(data) {
     vipType: data.vipType,
     emailVerified: data.email_verified,
     mobileVerified: data.mobile_verified,
-    raw: data,
-  };
-}
-
-function normalizeAiSummary(data) {
-  return {
-    modelResult: data.model_result || null,
-    summary: data.summary || null,
-    outline: data.outline || [],
     raw: data,
   };
 }
@@ -334,13 +287,10 @@ function stripTags(input) {
 module.exports = {
   extractVideoId,
   normalizeVideoDetail,
-  normalizeSearchResult,
-  normalizeHotSearch,
   normalizeComments,
   normalizeCommentItem,
   normalizeMainComments,
   normalizeUserInfo,
-  normalizeAiSummary,
   normalizeReplyNotifications,
   normalizeUnreadNotifications,
   normalizeDmSessions,

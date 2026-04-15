@@ -12,39 +12,7 @@ const {
   writeJson,
   readJson,
 } = require('./config');
-
-const DEFAULT_SETTINGS = {
-  sendMode: 'confirm',
-  autoSendMaxRisk: 'low',
-  draftCount: 3,
-  defaultChannel: 'dm',
-  sendMinGapSec: 600,
-  publicCommentMinGapSec: 180,
-  publicCommentMaxPerHour: 20,
-  publicReplyMaxPerHour: 100,
-  campaignCommentReplyGapSec: 20,
-  campaignVideoHopMinSec: 60,
-  campaignVideoHopMaxSec: 120,
-  sendFirstFollowUpDelaySec: 28800,
-  sendRepeatFollowUpDelaySec: 86400,
-  sendMaxFollowUpWithoutReply: 2,
-  watchIntervalSec: 90,
-  watchHistorySize: 20,
-  watchMaxDmFetchPerRun: 5,
-  watchIncludeSystemDm: false,
-  watchPrimeOnEmptyState: true,
-  watchAutoRefresh: true,
-  watchBaseBackoffSec: 120,
-  watchMaxBackoffSec: 1800,
-  watchJitterSec: 15,
-  watchHotPollSec: 60,
-  watchWarmPollSec: 180,
-  watchCoolPollSec: 900,
-  watchColdPollSec: 2700,
-  watchHotWindowSec: 600,
-  watchWarmWindowSec: 3600,
-  watchCoolWindowSec: 86400,
-};
+const { DEFAULT_SETTINGS } = require('./engagement');
 
 function removeDirIfExists(target) {
   if (!target || !fs.existsSync(target)) {
@@ -63,9 +31,8 @@ function buildInitBundle(runtimeRoot) {
     config: paths.configDir,
     cache: paths.cacheDir,
     data: paths.dataDir,
-    tasks: paths.tasksDir,
+    videoPools: paths.videoPoolsDir,
     products: paths.productsDir,
-    playbooks: paths.playbooksDir,
   };
 }
 
@@ -78,42 +45,36 @@ function writeDefaultFiles(runtimeRoot) {
   writeJson(paths.settingsPath, DEFAULT_SETTINGS);
 }
 
-function seedSchemeOnePlaybook(runtimeRoot) {
+function removeUnexpectedRuntimeArtifacts(runtimeRoot) {
   const paths = buildRuntimePaths(runtimeRoot);
-  const dir = path.join(paths.playbooksDir, '方案一-广撒网引流');
-  ensureDir(dir);
-  writeJson(path.join(dir, 'playbook.json'), {
-    title: '方案一-广撒网引流',
-    category: 'campaign',
-    objective: '按固定节奏搜索相关热门视频，先做公开评论，再按意向分层回复评论和私信，持续检查回复并尽快转群。',
-    channels: ['comment', 'dm'],
-    watch: {
-      enable: true,
-      intervalSec: 180,
-      primeOnStart: true,
-    },
-    execution: {
-      defaultEntry: 'campaign',
-      preferredChannel: 'comment',
-      requireDraftBeforeSend: true,
-    },
-    slug: '方案一-广撒网引流',
-  });
-  fs.writeFileSync(
-    path.join(dir, 'strategy.md'),
-    '# 方案一-广撒网引流\n\n- 每 2 分钟找 1 个相关热门视频候选。\n- 每个视频先发 1 条主评论。\n- 先判断评论区质量和与产品的相关度，再决定是否继续停留。\n- 高质量评论区可以停留更久，持续回复更多高意向评论。\n- 同一个视频里连续回复不同评论时，至少间隔 20 秒。\n- 从一个视频切到下一个视频前，至少等待 1 到 2 分钟。\n- 高意向：回复评论 + 可直接私信。\n- 中意向：只回复评论。\n- 每 3 分钟检查一次私信和评论回复。\n',
-    'utf8'
-  );
-  fs.writeFileSync(
-    path.join(dir, 'guardrails.md'),
-    '# Guardrails\n\n- 带 campaign 的公开动作按 campaign 自己的预算和节奏运行；不带 campaign 时，才走全局公开护栏。\n- 所有公开评论和回复都必须保留间隔，且优先短句真人风格。\n- 公开区不直接发群链接或二维码。\n- 私信优先先聊 1 到 2 轮，再发群入口。\n- 新用户首次运行时，先做小规模测试，不要一上来把预算打满。\n- 评论区质量高时允许多停留，但不要突破单视频内 20 秒回复间隔。\n- 从当前视频切换到下一个视频前，至少保留 1 到 2 分钟缓冲。\n',
-    'utf8'
-  );
-  fs.writeFileSync(
-    path.join(dir, 'prompts.md'),
-    '# Prompt Hints\n\n- 先判断用户意向强弱再决定公开回复还是私信。\n- 公开区回复要像 B 站真人，不像销售模板。\n- 私信尽量快进入有效沟通，并尽早给群入口。\n',
-    'utf8'
-  );
+  const allowedRootNames = new Set(['config', 'cache', 'data', 'products']);
+  const allowedDataNames = new Set(['campaigns', 'video-pools']);
+
+  try {
+    const rootEntries = fs.readdirSync(paths.runtimeRoot, { withFileTypes: true });
+    for (const entry of rootEntries) {
+      if (!entry.isDirectory()) {
+        continue;
+      }
+      if (allowedRootNames.has(entry.name)) {
+        continue;
+      }
+      fs.rmSync(path.join(paths.runtimeRoot, entry.name), { recursive: true, force: true });
+    }
+  } catch {}
+
+  try {
+    const dataEntries = fs.readdirSync(paths.dataDir, { withFileTypes: true });
+    for (const entry of dataEntries) {
+      if (!entry.isDirectory()) {
+        continue;
+      }
+      if (allowedDataNames.has(entry.name)) {
+        continue;
+      }
+      fs.rmSync(path.join(paths.dataDir, entry.name), { recursive: true, force: true });
+    }
+  } catch {}
 }
 
 function initSkill({ runtimeRoot = '', reset = false }) {
@@ -123,7 +84,7 @@ function initSkill({ runtimeRoot = '', reset = false }) {
   }
   writeRuntimeConfig({ runtimeRoot: targetRoot });
   writeDefaultFiles(targetRoot);
-  seedSchemeOnePlaybook(targetRoot);
+  removeUnexpectedRuntimeArtifacts(targetRoot);
   return {
     runtimeConfigPath: RUNTIME_CONFIG_PATH,
     runtimeRoot: targetRoot,
@@ -138,12 +99,15 @@ function initSkill({ runtimeRoot = '', reset = false }) {
       '扫码后执行 `node scripts/bili.js auth qr-poll`，确认 cookie 和 refresh_token 已写入。',
       '再执行 `node scripts/bili.js product setup --title "<产品名>" --intro "<介绍>" ...` 建立产品资料。',
       '然后执行 `node scripts/bili.js product doctor --slug "<slug>"` 检查产品是否可用于推广。',
-      '正式推广前先执行 `node scripts/bili.js campaign plan --product "<slug>" --hours 3 --scheme scheme1` 看预算，再决定是否启动。',
-      '最后执行 `node scripts/bili.js campaign run --product "<slug>" --hours 3 --scheme scheme1` 发起推广。',
+      '正式引流前先执行 `node scripts/bili.js candidate collect --product "<slug>" --target-count 30` 建立候选池。',
+      '正式推广前先执行 `node scripts/bili.js campaign plan --product "<slug>" --hours 3 --scheme candidate-pool-v1` 看预算，再决定是否启动。',
+      '然后执行 `node scripts/bili.js campaign run --product "<slug>" --hours 3 --scheme candidate-pool-v1` 创建 campaign 上下文。',
+      '最后执行 `node scripts/bili.js campaign next --id "<campaign_id>"`，再决定是否 `candidate next`、`inbox unread` 或 `thread send --channel comment --campaign ...`。',
     ],
     operatorGuidance: [
       '首次使用不要直接批量发评论或私信，先看 campaign plan 和当前默认节流。',
-      '默认优先使用高层命令：campaign、task、watch、inbox、thread。',
+      '默认优先使用高层命令：campaign、watch、inbox、thread。',
+      '跟进模块里先看 `inbox unread` / `inbox replies` / `inbox dm-sessions`，不要一上来就自己猜有没有未读。',
       '如果要切回别的运行目录，再次执行 init start 指定新的 runtime-root 即可。',
     ],
   };
@@ -160,14 +124,15 @@ function getInitStatus() {
     paths: buildInitBundle(currentRoot),
     hasCredentials: fs.existsSync(paths.credentialsPath),
     hasProductsDir: fs.existsSync(paths.productsDir),
-    hasPlaybooksDir: fs.existsSync(paths.playbooksDir),
     hint: '新用户首次使用时，先执行 `node scripts/bili.js init start --runtime-root <绝对路径> --reset true`。',
     recommendedSequence: [
       'node scripts/bili.js init start --runtime-root <绝对路径> --reset true',
       'node scripts/bili.js auth qr-generate',
       'node scripts/bili.js auth qr-poll',
       'node scripts/bili.js product setup --title "<产品名>" --intro "<介绍>" ...',
-      'node scripts/bili.js campaign plan --product "<slug>" --hours 3 --scheme scheme1',
+      'node scripts/bili.js candidate collect --product "<slug>" --target-count 30',
+      'node scripts/bili.js campaign plan --product "<slug>" --hours 3 --scheme candidate-pool-v1',
+      'node scripts/bili.js inbox unread --product "<slug>"',
     ],
   };
 }
