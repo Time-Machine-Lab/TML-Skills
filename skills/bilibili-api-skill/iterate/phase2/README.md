@@ -7,11 +7,12 @@
 二期设计的理解路径是：
 
 1. 先看这个 skill 整体是什么
-2. 再看整体运行环境怎么组织
-3. 再看上层编排怎么设计
-4. 再看指令和功能包怎么分层
-5. 再看领域事实层
-6. 最后再看底层接口和技术定案
+2. 再看产品在用户眼里会变成什么
+3. 再看整体运行环境怎么组织
+4. 再看上层编排怎么设计
+5. 再看指令和功能包怎么分层
+6. 再看领域事实层
+7. 最后再看底层接口和技术定案
 
 这就是二期设计的统一口径。
 
@@ -21,32 +22,41 @@
 
 - `Main Skill`
   - 项目地图和总入口
+- `Command`
+  - 最小、最稳定的原子化指令
+  - 一条指令只做一件明确的事
+- `Capability`
+  - 基于指令集再包装一层的高层功能包
+  - 用来完成一个更复杂的功能
+  - 需要 agent 参与执行和判断
 - `Strategy`
   - 推广策略模板
   - 是一整套推广打法、节奏和判断原则
 - `TaskSpec`
   - 基于 `Product + Strategy` 生成的具体任务文档
-- `Capability`
-  - 基于指令集再包装一层的高层功能包
-  - 需要 agent 参与执行和判断
-- `Command`
-  - 最小、最稳定的原子化指令
 - `Domain`
   - 平台对象和系统事实层
 - `OperationRecord`
   - 关键操作记录
+
+可以直接这样理解：
+
+- `Command` 解决“做一个动作”
+- `Capability` 解决“完成一个功能”
+- `Strategy` 解决“这套推广怎么打”
 
 ## 阅读顺序
 
 建议按下面顺序阅读：
 
 1. [main-skill-map-design.md](/Users/mac/Code/TML-Skills/skills/bilibili-api-skill/iterate/phase2/main-skill-map-design.md)
-2. [runtime-environment-architecture.md](/Users/mac/Code/TML-Skills/skills/bilibili-api-skill/iterate/phase2/runtime-environment-architecture.md)
-3. [orchestration-objects.md](/Users/mac/Code/TML-Skills/skills/bilibili-api-skill/iterate/phase2/orchestration-objects.md)
-4. [command-pack-design.md](/Users/mac/Code/TML-Skills/skills/bilibili-api-skill/iterate/phase2/command-pack-design.md)
-5. [domain-entities.md](/Users/mac/Code/TML-Skills/skills/bilibili-api-skill/iterate/phase2/domain-entities.md)
-6. [phase2-core-interfaces.md](/Users/mac/Code/TML-Skills/skills/bilibili-api-skill/iterate/phase2/phase2-core-interfaces.md)
-7. [sqlite-adoption-strategy.md](/Users/mac/Code/TML-Skills/skills/bilibili-api-skill/iterate/phase2/sqlite-adoption-strategy.md)
+2. [user-stories-and-flows.md](/Users/mac/Code/TML-Skills/skills/bilibili-api-skill/iterate/phase2/user-stories-and-flows.md)
+3. [runtime-environment-architecture.md](/Users/mac/Code/TML-Skills/skills/bilibili-api-skill/iterate/phase2/runtime-environment-architecture.md)
+4. [orchestration-objects.md](/Users/mac/Code/TML-Skills/skills/bilibili-api-skill/iterate/phase2/orchestration-objects.md)
+5. [command-pack-design.md](/Users/mac/Code/TML-Skills/skills/bilibili-api-skill/iterate/phase2/command-pack-design.md)
+6. [domain-entities.md](/Users/mac/Code/TML-Skills/skills/bilibili-api-skill/iterate/phase2/domain-entities.md)
+7. [phase2-core-interfaces.md](/Users/mac/Code/TML-Skills/skills/bilibili-api-skill/iterate/phase2/phase2-core-interfaces.md)
+8. [sqlite-adoption-strategy.md](/Users/mac/Code/TML-Skills/skills/bilibili-api-skill/iterate/phase2/sqlite-adoption-strategy.md)
 
 ## 文档说明
 
@@ -69,6 +79,16 @@
 1. `runtime-root` 下应该有哪些目录
 2. 数据库和文件目录分别存什么
 3. 产品、任务、策略、能力包分别放在哪里
+
+### `user-stories-and-flows.md`
+
+用户故事与流程设计。
+
+回答：
+
+1. 这个产品最终在用户眼里会变成什么
+2. 不同类型用户会怎么使用这套 skill
+3. 用户操作流程和业务流程是什么
 
 ### `orchestration-objects.md`
 

@@ -16,6 +16,14 @@
 
 agent 在运行时，按照 `TaskSpec` 去调用 `Capability`，并参考 `Strategy` 里的规则继续往下执行。
 
+如果引入主副 `Agent` 模式，可以直接这样理解：
+
+- 主 `Agent` 负责看全局
+- 副 `Agent` 负责被派出去承接某一段任务
+- 副 `Agent` 承接的通常不是单次动作，而是一段相对完整的工作
+- 这段工作可以是一个 `Capability`
+- 也可以是 `TaskSpec` 里的某个阶段片段
+
 ---
 
 ## 1. `Capability`
@@ -25,6 +33,12 @@ agent 在运行时，按照 `TaskSpec` 去调用 `Capability`，并参考 `Strat
 它的重点不是底层接口，而是“agent 可以直接拿来用的一块能力”。
 
 可以简单理解成：一个能力包就是一个稳定可调用的模块。
+
+在主副 `Agent` 模式下，还可以进一步理解成：
+
+- `Capability` 是主 `Agent` 可以派给副 `Agent` 去完成的一类标准工作包
+- 副 `Agent` 会在这个工作包内部自己组合调用多个 `Command`
+- 主 `Agent` 只需要关心这个工作包的目标、输入、输出和结果回收
 
 ### 例子
 
@@ -212,6 +226,8 @@ agent 在运行时，按照 `TaskSpec` 去调用 `Capability`，并参考 `Strat
 - 每个阶段调用哪些 `Capability`
 - 当前哪些步骤已完成，哪些还未完成
 - 如果中断了，下次从哪里继续
+- 哪些阶段适合直接由主 `Agent` 自己推进
+- 哪些阶段更适合派给副 `Agent` 独立完成
 
 #### 这个例子里三者分别在做什么
 
@@ -240,6 +256,8 @@ agent 在运行时，按照 `TaskSpec` 去调用 `Capability`，并参考 `Strat
 - 每个阶段要调用哪些 `Capability`
 - 当前的 checklist
 - 暂停和恢复说明
+- 哪些工作由主 `Agent` 保持掌控
+- 哪些工作可以派发给副 `Agent`
 
 ### 为什么适合用 md
 
@@ -277,9 +295,14 @@ Strategy
 TaskSpec
   -> 把这次任务真正写出来
 
-Agent
-  -> 按 TaskSpec 执行
-  -> 在执行过程中调用 Capability
+Main Agent
+  -> 按 TaskSpec 管理整次任务
+  -> 负责规划、判断、派发和汇总
+
+Sub Agent
+  -> 被派去承接某一段任务
+  -> 在任务内部调用 Capability / Command
+  -> 完成后把结果交回给 Main Agent
 ```
 
 ---
@@ -308,5 +331,7 @@ Agent
 - `Strategy` 是带细节说明的策略模板
 - `TaskSpec` 是基于 `Product + Strategy` 生成的具体任务文档
 - `TaskSpec` 用 md 形式来承载
-- agent 基于 `TaskSpec` 持续执行
+- 主 `Agent` 基于 `TaskSpec` 持续管理任务
+- 副 `Agent` 负责承接某一段被派发出去的任务
+- 副 `Agent` 承接的通常是一个功能包或一个阶段片段，而不是单次动作
 - 执行过程中产生的关键操作，统一沉淀到 `OperationRecord`
