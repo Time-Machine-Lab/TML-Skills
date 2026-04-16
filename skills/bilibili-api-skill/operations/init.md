@@ -46,11 +46,12 @@ node scripts/bili.js system doctor
 
 ## 执行顺序
 
-1. 先看 `init status`
-2. 首次使用时执行 `init start`
-3. 用 `auth qr-generate` 生成二维码
-4. 扫码确认后执行 `auth qr-poll`
-5. 用 `system doctor` 看剩余缺口
+1. 先确认 Node 版本是 `22.13+`
+2. 再看 `init status`
+3. 首次使用时执行 `init start`
+4. 用 `auth qr-generate` 生成二维码
+5. 扫码确认后执行 `auth qr-poll`
+6. 用 `system doctor` 看剩余缺口
 
 ## 输出里重点看什么
 
@@ -75,6 +76,7 @@ node scripts/bili.js system doctor
 
 ## 常见错误
 
+- Node 版本低于 `22.13`，后续无法按二期方案接入内置 `node:sqlite`
 - 没有先 `npm install`，导致二维码或图片相关依赖缺失
 - 用相对路径传 `--runtime-root`
 - 扫码后没有执行 `auth qr-poll`

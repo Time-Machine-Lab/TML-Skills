@@ -53,6 +53,17 @@ description: 用于 B 站(Bilibili)账号初始化、产品建档、候选视频
 首次拿到这个 skill 后，先在 skill 根目录执行：
 
 ```bash
+node -v
+```
+
+要求：
+
+- Node `22.13+`
+- 二期 SQLite 方案默认基于 Node 内置 `node:sqlite`
+
+确认版本满足后再执行：
+
+```bash
 npm install
 ```
 

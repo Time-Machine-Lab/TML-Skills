@@ -5,7 +5,7 @@
   "description": "Modular Bilibili outreach skill runtime dependencies",
   "type": "commonjs",
   "engines": {
-    "node": ">=20"
+    "node": ">=22.13"
   },
   "dependencies": {
     "image-size": "^1.1.1",
