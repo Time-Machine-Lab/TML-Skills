@@ -1,0 +1,101 @@
+# 派工单：{{delegationId}}
+
+## 派工信息
+
+- 任务 ID：`{{taskId}}`
+- 阶段 ID：`{{stageId}}`
+- 功能包：`{{capabilitySlug}}`
+- 创建时间：`{{createdAt}}`
+
+## 使用说明
+
+- 这份派工单定义了一段边界明确的副 Agent 工作片段。
+- 执行时要同时遵循阶段目标、功能包规则和策略导向。
+- 不要自行扩大范围。
+- 如果有允许调用的指令不明确，先用 `node scripts/ops.js command explain --ids "<command-a>,<command-b>"` 查清楚再动手。
+
+## 工作范围
+
+{{scope}}
+
+## 策略定位
+
+{{strategyPositioning}}
+
+## 策略工作规则
+
+{{strategyWorkingRules}}
+
+## 策略提示词导向
+
+{{strategyPromptGuidance}}
+
+## 阶段提示词重点
+
+{{stagePromptFocus}}
+
+## 阶段进入条件
+
+{{stageEntryCriteria}}
+
+## 阶段退出条件
+
+{{stageExitCriteria}}
+
+## 功能包用途
+
+{{capabilityPurpose}}
+
+## 何时使用
+
+{{whenToUse}}
+
+## 前置条件
+
+{{preconditions}}
+
+## 执行步骤
+
+{{executionSteps}}
+
+## 判断规则
+
+{{decisionRules}}
+
+## 允许使用的指令
+
+{{allowedCommands}}
+
+## 禁止事项
+
+{{doNot}}
+
+## 回写边界
+
+- 如果在这个任务内执行了真实外发动作，请带上 `--taskId "{{taskId}}" --stageId "{{stageId}}"`，确保动作可以回溯到当前任务阶段。
+- 如果执行了真实外发动作，生成的关键动作记录 `OperationRecord` 必须带有简短说明，建议控制在 100 字内。
+- 不要直接修改产品主档文件。
+- 结果应交回主 Agent，由它统一执行 `task reconcile`。
+
+## 回交要求
+
+- 说明你完成了什么。
+- 说明你跳过了什么，以及为什么跳过。
+- 如果存在阻塞或风险，也要一并说明。
+- 返回所有写入到 `outputs/<stage-id>/` 下的结果文件路径。
+
+## 产出要求
+
+{{outputExpectations}}
+
+## 完成标志
+
+{{doneWhen}}
+
+## 受阻处理
+
+{{ifBlocked}}
+
+## 预期回交结果
+
+{{expectedResult}}

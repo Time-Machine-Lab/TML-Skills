@@ -1,0 +1,99 @@
+{
+  "slug": "baseline-comment-reply-dm",
+  "displayName": "基础评论-回复-私信闭环",
+  "mode": "review-first",
+  "stages": [
+    {
+      "id": "discover_videos",
+      "title": "视频发现",
+      "type": "research",
+      "capability": "video-discovery",
+      "goal": "找到一批可供后续推进的目标视频。",
+      "outputKey": "video-list",
+      "promptFocus": "围绕产品卖点、用户问题和使用场景去提炼关键词，不要只追求大词流量。",
+      "entryCriteria": [
+        "产品工作区已存在。",
+        "产品资料已经能说明目标用户与核心卖点。"
+      ],
+      "exitCriteria": [
+        "已经产出可用的候选视频列表。",
+        "列表中已经包含筛选说明。"
+      ]
+    },
+    {
+      "id": "mine_prospects",
+      "title": "评论区线索挖掘",
+      "type": "research",
+      "capability": "comment-prospect-mining",
+      "goal": "从评论区中找到更有意向的用户和线索。",
+      "outputKey": "prospect-list",
+      "promptFocus": "优先找求助、求推荐、比较、真实问题表达，不要把所有评论都当 prospect。",
+      "entryCriteria": [
+        "上一阶段已经产出目标视频列表。"
+      ],
+      "exitCriteria": [
+        "已经产出线索列表。",
+        "每条线索都带有评论依据或判断理由。"
+      ]
+    },
+    {
+      "id": "public_comment_outreach",
+      "title": "公开评论触达",
+      "type": "outbound",
+      "capability": "public-comment-outreach",
+      "goal": "在合适的视频下发起第一轮公开评论触达。",
+      "reviewRequired": true,
+      "outputKey": "comment-send-results",
+      "promptFocus": "评论要自然、短、贴上下文，像参与讨论而不是发布广告。",
+      "entryCriteria": [
+        "已经有候选视频可用。",
+        "首轮外发前已通过当前阶段审核。",
+        "当前账号已经通过评论动作的节流检查。"
+      ],
+      "exitCriteria": [
+        "评论发送结果已经被记录。",
+        "真实外发动作已经写入 OperationRecord。"
+      ]
+    },
+    {
+      "id": "reply_follow_up",
+      "title": "回复承接",
+      "type": "outbound",
+      "capability": "reply-and-dm-follow-up",
+      "goal": "在合适时机打开跟进窗口，并优先在公开区继续承接。",
+      "reviewRequired": true,
+      "outputKey": "follow-up-results",
+      "promptFocus": "只在公开触达后已经出现互动信号，或任务已进入明确跟进窗口时打开；顺着用户当前问题继续聊，优先在评论区承接，不要过早转私信。",
+      "entryCriteria": [
+        "公开评论触达后已经出现互动信号。",
+        "任务在需要时已经进入明确的跟进窗口。",
+        "首轮外发前已通过当前阶段审核。",
+        "当前账号已经通过回复动作的节流检查。"
+      ],
+      "exitCriteria": [
+        "回复承接结果已经被记录。",
+        "需要时，高意向候选已经被明确标记。"
+      ]
+    },
+    {
+      "id": "high_intent_dm",
+      "title": "高意向私信升级",
+      "type": "outbound",
+      "capability": "reply-and-dm-follow-up",
+      "goal": "只在高意向时机打开私信升级。",
+      "reviewRequired": true,
+      "outputKey": "follow-up-results",
+      "promptFocus": "只有在跟进窗口内且用户已经表现出明确需求、主动追问或更强信号时，才允许转入私信。",
+      "entryCriteria": [
+        "已经存在明确的高意向候选。",
+        "当前任务上下文已经进入跟进窗口。",
+        "首轮外发前已通过当前阶段审核。",
+        "当前账号已经通过私信动作的节流检查。"
+      ],
+      "exitCriteria": [
+        "私信升级结果已经被记录。",
+        "每一条真实私信动作都已反映到 OperationRecord 中。"
+      ]
+    }
+  ]
+}

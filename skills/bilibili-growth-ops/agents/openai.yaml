@@ -1,0 +1,7 @@
+interface:
+  display_name: "B站增长运营系统"
+  short_description: "用于 B 站增长运营、任务编排与过程回溯的技能包"
+  default_prompt: "使用 $bilibili-growth-ops 初始化运行环境、管理产品工作区，并推进 B 站增长任务。"
+
+policy:
+  allow_implicit_invocation: true

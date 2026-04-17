@@ -18,3 +18,4 @@ package.json
 # For now, only ignoring .idea as requested.
 /node_modules/
 skills/bilibili-api-skill/node_modules/
+/skills/bilibili-growth-ops/node_modules/
