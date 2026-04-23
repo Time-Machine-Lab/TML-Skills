@@ -1,0 +1,55 @@
+{
+  "version": 1,
+  "hosts": [
+    {
+      "id": "prod-api-1",
+      "name": "Production API 1",
+      "host": "10.0.0.10",
+      "port": 22,
+      "fingerprint": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAEXAMPLE",
+      "tags": [
+        "prod",
+        "api"
+      ],
+      "notes": "Main production API host",
+      "ssh": {
+        "username": "root",
+        "auth_type": "password",
+        "password": "example-root-password"
+      },
+      "services": [
+        {
+          "id": "mysql-main",
+          "type": "mysql",
+          "name": "Main MySQL",
+          "connection": {
+            "host": "127.0.0.1",
+            "port": 3306,
+            "database": null
+          },
+          "auth": {
+            "username": "root",
+            "password": "example-mysql-password"
+          },
+          "extra": {}
+        },
+        {
+          "id": "redis-main",
+          "type": "redis",
+          "name": "Main Redis",
+          "connection": {
+            "host": "127.0.0.1",
+            "port": 6379,
+            "database": 0
+          },
+          "auth": {
+            "username": null,
+            "password": "example-redis-password"
+          },
+          "extra": {}
+        }
+      ],
+      "updated_at": "2026-04-21T12:00:00Z"
+    }
+  ]
+}

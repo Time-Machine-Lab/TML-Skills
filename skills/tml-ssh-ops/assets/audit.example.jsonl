@@ -1,0 +1,4 @@
+{"time":"2026-04-21T12:00:00Z","user":"alice","action":"run_command","host_id":"prod-api-1","command":"df -h","risk":"safe","approval_id":null,"result":"success","details":"Filesystem usage checked"}
+{"time":"2026-04-21T12:11:00Z","user":"admin","action":"approve","host_id":"prod-api-1","command":"rm -rf /tmp/test-dir","risk":"dangerous","approval_id":"apr_001","result":"approved","details":"Approved one-time dangerous command"}
+{"time": "2026-04-21T14:52:17Z", "user": "alice", "action": "run_command", "host_id": "prod-api-1", "command": "rm -rf /opt/not-approved", "risk": "dangerous", "approval_id": null, "result": "blocked", "details": "no valid exact approval found"}
+{"time": "2026-04-21T14:52:17Z", "user": "alice", "action": "run_command", "host_id": "prod-api-1", "command": "systemctl restart nginx", "risk": "sensitive", "approval_id": null, "result": "blocked", "details": "Sensitive command requires --confirm-sensitive"}

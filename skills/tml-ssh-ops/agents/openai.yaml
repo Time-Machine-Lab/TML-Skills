@@ -1,0 +1,4 @@
+interface:
+  display_name: "TML SSH Ops"
+  short_description: "Team SSH workflow with JSON storage and approval gates"
+  default_prompt: "Use $tml-ssh-ops to manage SSH hosts, service credentials, and high-risk command approvals."
