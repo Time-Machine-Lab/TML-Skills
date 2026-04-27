@@ -39,14 +39,26 @@ description: 处理飞书知识库(Feishu Wiki/Docx)相关操作。Invoke when u
    ```bash
    node scripts/suggest_archive_path.js "<doc_title>" "<doc_content_or_summary>" --top 3
    ```
-3. 用户未明确指定归档位置时，Agent 直接采用 `recommendation` 执行归档，不需要先询问确认。
-4. `confidence` 仅用于结果说明与风险提示，不作为是否执行的阻断条件。
-5. 归档前兜底校验：若推荐路径命中失败，先刷新缓存再重算一次；仍失败则回退到该知识库根目录后继续执行。
+3. 若用户**没有明确指定目标文档/节点**，Agent 不得直接写入；必须先返回候选位置（建议 2-3 个），每个候选都要给出“文档名称 + 简短描述”，并要求用户明确选择后再执行写入。
+4. 用户一旦明确选择（如“选 1”/“存到 XX 文档”），再执行归档写入；未收到明确选择前禁止落库。
+5. `confidence` 仅用于候选说明与风险提示，不作为“可跳过确认”的理由。
+6. 归档前兜底校验：若推荐路径命中失败，先刷新缓存再重算一次；仍失败则回退到该知识库根目录并再次向用户确认后执行。
 
 归档推荐依据必须包含：
 - 知识库名称与描述（space 介绍）
 - 节点标题与路径词命中
 - 文档标题与正文关键词匹配
+
+### 2.4 配置读取强制规则（必须）
+- 当任务涉及特殊配置（鉴权、租户、环境、默认目标空间、上传策略、限流参数、功能开关、路径映射等）时，Agent 必须主动读取 `config/` 下相关配置文件，禁止凭记忆或猜测执行。
+- 默认先检查 `config/credentials.yaml`；若任务涉及其他配置项，再按需读取 `config/` 中对应文件。
+- 若配置缺失、字段为空或与当前任务冲突，必须先向用户说明并请求补充/确认，再继续执行。
+- 除非用户明确要求，不得擅自改写配置文件；读取配置仅用于正确执行当前任务。
+
+### 2.5 存储位置确认关键词（必须）
+- 当用户意图包含“存储/保存/归档/写入/放到知识库”等关键词，且未给出明确目标文档名或节点路径时，必须触发“先确认后存储”流程。
+- “先确认后存储”标准话术必须包含：`请问你要存储到哪个文档？`（可附候选列表）。
+- 候选列表建议用序号展示（1/2/3），并包含：文档名称、文档描述（或匹配理由），便于用户直接选择。
 
 ## 3. 对话与交付规范（体验优化）
 
@@ -54,6 +66,7 @@ description: 处理飞书知识库(Feishu Wiki/Docx)相关操作。Invoke when u
 - 先执行后解释，避免冗长预告。
 - 信息不足时一次性问全关键参数，减少反复追问。
 - 失败时提供可直接执行的修复动作。
+- 对“存储/归档”类请求，若目标文档不明确，必须先确认位置再执行，不能按“最相近文档”直接写入。
 
 ### 3.2 回复模板
 每次执行后尽量按下列结构反馈：
@@ -65,6 +78,12 @@ description: 处理飞书知识库(Feishu Wiki/Docx)相关操作。Invoke when u
 后续建议：<下一步可选动作>
 ```
 
+存储/归档成功后必须额外回传（强制）：
+
+```text
+已存储至 {知识库} | {文档} | {文档链接}
+```
+
 ## 4. 授权与 Token 管理（自动化）
 > 鉴权问题优先使用现有脚本，不手写临时请求。
 
@@ -73,6 +92,8 @@ description: 处理飞书知识库(Feishu Wiki/Docx)相关操作。Invoke when u
 node scripts/auth.js status
 ```
 根据输出先补齐授权，避免业务请求后才发现凭据未就绪。
+
+首次安装/首次使用时，若 `config/credentials.yaml` 中 `access_token` 与 `refresh_token` 为空，视为“未授权”，必须先进入授权流程，禁止直接执行任何业务 API。
 
 ### 4.1 常用容错路径
 - 优先用 `scripts/api_request.js` 发请求；该脚本会在常见 token 过期场景自动刷新并重试一次。
@@ -91,6 +112,20 @@ node scripts/auth.js status
    ```bash
    node scripts/auth.js token <code>
    ```
+
+### 4.3 首次安装强制授权提示（必须）
+- 触发条件：首次安装 skill、首次运行检测到 token 为空、或用户明确表示“刚安装/首次接入”。
+- 触发后必须中断业务动作，先执行授权，不得继续读写知识库。
+- 必须先执行：
+  ```bash
+  node scripts/auth.js url
+  ```
+  并把授权链接直接发给用户，引导其完成授权。
+- 用户完成授权后，必须要求用户回传授权码 `code`，再执行：
+  ```bash
+  node scripts/auth.js token <code>
+  ```
+- 授权成功后再恢复原任务执行；若 `code` 过期/无效，明确提示用户重新授权并重新获取 `code`。
 
 ## 5. 错误处理优先级（必须）
 1. **权限错误优先**：出现 `Permission Denied`、`131006` 等，立即停止重试，直接告知“当前无权限执行此操作”。  
@@ -148,6 +183,7 @@ node scripts/auth.js status
 - 仅当用户明确要求“转为飞书在线文档结构”时，才允许读取并执行转换类操作。
 
 ### 6.4 操作文档映射
+- Wiki 文档按指令修改（组合流程）：`operations/wiki-doc-update-by-instruction.md`
 - 上传素材（原文件直传）：`operations/drive-media-upload-all.md`
 - 图片块上传素材（Markdown 转文档流程）：`operations/docx-image-upload-for-block.md`
 - 文档归档路由（选知识库+路径）：`operations/doc-archive-routing.md`
@@ -168,7 +204,6 @@ node scripts/auth.js status
 - Markdown/HTML 内容转换为文档块：`operations/docx-content-convert.md`
 - 创建块：`operations/docx-block-create.md`
 - 获取块信息：`operations/docx-block-get.md`
-- 获取块信息（扩展）：`operations/docx-block-get-2.md`
 - 更新块内容：`operations/docx-block-patch.md`
 - 批量更新块：`operations/docx-block-batch-update.md`
 - 批量删除块：`operations/docx-block-batch-delete.md`
