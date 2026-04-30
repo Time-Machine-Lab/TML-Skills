@@ -6,20 +6,19 @@ const {
   encodeImageToDataUri,
   isDataUri,
   isRemoteUrl,
-  loadApiKey,
-  loadConfig,
   mergePromptWithPositionals,
   normalizeArgvForMultiValueOptions,
   parseRetryOptions,
   requestJson,
   resolveConfigPath,
+  resolveProviderRuntime,
 } = require("./lib/image_api_common");
 
 const DEFAULT_BASE_URL = "https://api.bltcy.top";
 const DEFAULT_MJ_VERSION = "7";
 
 function resolveBaseUrl(values, config) {
-  const raw = values["base-url"] || config.mj_base_url || config.base_url || DEFAULT_BASE_URL;
+  const raw = values["base-url"] || config.baseUrl || config.base_url || DEFAULT_BASE_URL;
   const finalValue = String(raw || "").trim().replace(/\/+$/, "");
   if (!finalValue) {
     throw new Error("Base URL is empty");
@@ -28,7 +27,7 @@ function resolveBaseUrl(values, config) {
 }
 
 function resolveRoutePrefix(values, config) {
-  const raw = values["route-prefix"] !== undefined ? values["route-prefix"] : config.mj_route_prefix || "fast";
+  const raw = values["route-prefix"] !== undefined ? values["route-prefix"] : config.route_prefix || "fast";
   const text = String(raw || "").trim();
   return text ? text.replace(/^\/+|\/+$/g, "") : "";
 }
@@ -186,6 +185,7 @@ async function main() {
       options: {
         prompt: { type: "string" },
         "image-path": { type: "string", multiple: true },
+        "model-id": { type: "string", default: "" },
         "base-url": { type: "string", default: "" },
         "route-prefix": { type: "string" },
         "notify-hook": { type: "string", default: "" },
@@ -197,6 +197,7 @@ async function main() {
         "poll-timeout": { type: "string", default: "600" },
         download: { type: "string", default: "" },
         "download-mode": { type: "string", default: "grid" },
+        "dry-run": { type: "boolean", default: false },
       },
       strict: true,
       allowPositionals: true,
@@ -255,10 +256,11 @@ async function main() {
   let baseUrl;
   let routePrefix;
   try {
-    config = loadConfig(configPath);
-    apiKey = loadApiKey(config, configPath);
-    baseUrl = resolveBaseUrl(values, config);
-    routePrefix = resolveRoutePrefix(values, config);
+    const runtime = resolveProviderRuntime(configPath, "mj", values["model-id"], DEFAULT_BASE_URL);
+    config = runtime;
+    apiKey = runtime.apiKey;
+    baseUrl = resolveBaseUrl(values, runtime);
+    routePrefix = resolveRoutePrefix(values, runtime);
   } catch (error) {
     console.error(`Config error: ${error.message}`);
     return 2;
@@ -287,6 +289,20 @@ async function main() {
   };
   if (String(values["notify-hook"] || "").trim()) {
     payload.notifyHook = String(values["notify-hook"]).trim();
+  }
+
+  if (values["dry-run"]) {
+    console.log(JSON.stringify({
+      ok: true,
+      dry_run: true,
+      submit_url: submitUrl,
+      provider: "mj",
+      model_id: config.modelId,
+      route_prefix: routePrefix,
+      payload,
+      poll: !values["no-poll"],
+    }, null, 2));
+    return 0;
   }
 
   let submitResult;

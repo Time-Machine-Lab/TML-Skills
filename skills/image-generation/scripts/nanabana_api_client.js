@@ -1,14 +1,12 @@
 #!/usr/bin/env node
 const { parseArgs } = require("node:util");
 const {
-  downloadFile,
-  loadApiKey,
-  loadConfig,
   mergePromptWithPositionals,
   parseRetryOptions,
   requestJson,
-  resolveBaseUrl,
   resolveConfigPath,
+  resolveNanoBananaRuntime,
+  saveImageResults,
 } = require("./lib/image_api_common");
 
 const DEFAULT_BASE_URL = "https://api.bltcy.top";
@@ -39,14 +37,17 @@ async function main() {
     parsed = parseArgs({
       options: {
         prompt: { type: "string" },
-        model: { type: "string", default: "nano-banana-2-4k" },
+        "model-id": { type: "string", default: "" },
+        model: { type: "string", default: "" },
         "response-format": { type: "string", default: "url" },
         "aspect-ratio": { type: "string", default: "1:1" },
-        "image-size": { type: "string", default: "1K" },
+        resolution: { type: "string", default: "2K" },
+        "image-size": { type: "string" },
         download: { type: "string", default: "" },
         timeout: { type: "string", default: "120" },
         retry: { type: "string", default: "2" },
         "retry-delay": { type: "string", default: "800" },
+        "dry-run": { type: "boolean", default: false },
       },
       strict: true,
       allowPositionals: true,
@@ -78,8 +79,9 @@ async function main() {
     return 2;
   }
 
-  if (!["1K", "2K", "4K"].includes(values["image-size"])) {
-    console.error("Invalid --image-size. Use: 1K, 2K, or 4K");
+  const resolution = String(values.resolution || values["image-size"] || "2K").trim().toUpperCase();
+  if (!["1K", "2K", "4K"].includes(resolution)) {
+    console.error("Invalid --resolution/--image-size. Use: 1K, 2K, or 4K");
     return 2;
   }
 
@@ -97,12 +99,9 @@ async function main() {
   }
   const { retry, retryDelay } = retryOptions;
 
-  let apiKey;
-  let baseUrl;
+  let runtime;
   try {
-    const config = loadConfig(configPath);
-    apiKey = loadApiKey(config, configPath);
-    baseUrl = resolveBaseUrl(config, DEFAULT_BASE_URL);
+    runtime = resolveNanoBananaRuntime(configPath, { ...values, resolution }, DEFAULT_BASE_URL);
   } catch (error) {
     console.error(`Config error: ${error.message}`);
     return 2;
@@ -111,19 +110,34 @@ async function main() {
   const payload = buildPayload({
     ...values,
     prompt,
+    model: values.model || runtime.modelName,
+    "image-size": resolution,
   });
-  const url = `${baseUrl}/v1/images/generations`;
+  const url = `${runtime.baseUrl}/v1/images/generations`;
 
   console.error(`Calling API: ${url}`);
+  console.error(`Model: ${payload.model}`);
   console.error(`Payload: ${JSON.stringify(payload)}`);
   console.error("Generating image... please wait.");
+
+  if (values["dry-run"]) {
+    console.log(JSON.stringify({
+      ok: true,
+      dry_run: true,
+      endpoint: url,
+      provider: "nano_banana",
+      model_id: runtime.modelId,
+      payload,
+    }, null, 2));
+    return 0;
+  }
 
   let result;
   try {
     result = await requestJson({
       method: "POST",
       url,
-      apiKey,
+      apiKey: runtime.apiKey,
       body: payload,
       timeoutSeconds: timeout,
       maxRetries: retry,
@@ -139,16 +153,9 @@ async function main() {
 
   console.log(JSON.stringify(result, null, 2));
 
-  if (values.download && values["response-format"] === "url") {
-    const data = result.data;
-    const imageUrl = Array.isArray(data) && data.length > 0 ? data[0].url : "";
-    if (!imageUrl) {
-      console.error("No image URL found in response['data'][0]['url']");
-      return 1;
-    }
+  if (values.download) {
     try {
-      await downloadFile(imageUrl, values.download, timeout, retry, retryDelay);
-      console.error(`Downloaded image -> ${values.download}`);
+      await saveImageResults(result, values.download, timeout, retry, retryDelay);
     } catch (error) {
       console.error(`Download failed: ${error.message}`);
       return 1;

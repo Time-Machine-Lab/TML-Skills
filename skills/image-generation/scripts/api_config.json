@@ -1,3 +1,4 @@
 {
-  "api_key": "sk-fm0kbbdpfq5MQ8Z7rViB8UoiUd7FhqglWQGNlMnWBBdJv129"
+  "source_config": "/Users/mac/Code/mm-agent/agent-module/src/main/resources/model-config/image-gen.json",
+  "default_provider": "gpt_image_2"
 }

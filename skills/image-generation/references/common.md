@@ -1,42 +1,48 @@
-# Image Generation 通用调用规范
+# Image Generation Common Reference
 
-## 1. 环境要求
+## Runtime
 
-- 推荐 Node.js 18+（依赖运行时 `fetch` / `FormData` / `Blob`）。
-- 配置文件默认位置：`skills/image-generation/scripts/api_config.json`
-- 可通过环境变量覆盖配置：`IMAGE_API_CONFIG=/abs/path/to/api_config.json`
+- Use Node.js 18+; Node 22 is preferred.
+- Default config file: `skills/image-generation/scripts/api_config.json`.
+- Default config links to `/Users/mac/Code/mm-agent/agent-module/src/main/resources/model-config/image-gen.json`.
+- Override config with `IMAGE_API_CONFIG=/abs/path/to/api_config.json`.
+- Override the linked mm-agent model config with `MM_AGENT_IMAGE_GEN_CONFIG=/abs/path/to/image-gen.json`.
 
-## 2. 统一可靠性参数
+## Config Shape
 
-以下脚本都支持：
-- `--timeout`：单次请求超时（秒）
-- `--retry`：失败后重试次数（非负整数，默认 `2`）
-- `--retry-delay`：重试基准延迟（毫秒，默认 `800`，指数退避）
+The scripts understand mm-agent's grouped provider config:
 
-重试触发场景（自动）：
-- 网络错误、超时
-- 常见临时性 HTTP 错误（如 `429`、`5xx`）
+- `gpt_image_2.default_id`, `gpt_image_2.models[]`
+- `jimeng.default_id`, `jimeng.models[]`
+- `nano_banana.default_id`, `nano_banana.models[]`
+- `mj.default_id`, `mj.models[]`
 
-## 3. Shell 引号规范（重点）
+Each model entry should provide `base_url`, `api_key`, and either `model_name` or provider-specific fields.
 
-在 Windows PowerShell 中，提示词包含空格时，优先使用单引号：
+Do not print API keys. Redact them in logs and reports.
+
+## Reliability Flags
+
+All scripts support:
+
+- `--timeout` request timeout in seconds.
+- `--retry` retry count, non-negative integer.
+- `--retry-delay` base retry delay in milliseconds.
+- `--dry-run` validate config, resolved model, endpoint, and payload without calling the API.
+
+Retries apply to network failures, timeouts, 429, and transient 5xx responses.
+
+## Output
+
+- Scripts print full JSON to stdout.
+- Progress and diagnostics go to stderr.
+- `--download` saves returned `url` or `b64_json` images to disk.
+- Multi-image responses are saved as `name_0.ext`, `name_1.ext`, etc.
+
+## Shell Quoting
+
+Quote prompts. In PowerShell, prefer single quotes:
 
 ```powershell
---prompt 'A B C'
+--prompt 'A clean product poster with Chinese text'
 ```
-
-脚本已对“提示词被拆分成多个参数”的情况做自动合并，但仍建议显式加引号以减少歧义。
-
-## 4. 输出与下载约定
-
-- 传入 `--download` 时，若目录不存在会自动创建。
-- 脚本会输出完整 JSON，便于上层 agent 继续处理。
-- 大图生成（如 `4K`）会有等待时间，脚本会打印 `Generating... please wait.` 类提示。
-
-## 5. 建议执行流程
-
-1. 根据任务选择模型（Nano-banana / Jimeng / Midjourney）。
-2. 仅加载目标模型文档（懒加载）。
-3. 先小规模验证参数（尺寸、比例、prompt），再批量生成。
-4. 请求失败优先调高 `--timeout`，其次增加 `--retry` 与 `--retry-delay`。
-

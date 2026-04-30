@@ -1,0 +1,11 @@
+secrets/accounts.local.json
+secrets/*.local.json
+secrets/*.env
+secrets/.env
+sessions/*.local.*
+sessions/*.har
+sessions/*.json
+sessions/*.txt
+!secrets/accounts.example.json
+!secrets/README.md
+!sessions/README.md

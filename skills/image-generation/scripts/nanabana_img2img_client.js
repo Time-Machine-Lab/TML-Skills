@@ -3,15 +3,13 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { parseArgs } = require("node:util");
 const {
-  downloadFile,
-  loadApiKey,
-  loadConfig,
   mergePromptWithPositionals,
   normalizeArgvForMultiValueOptions,
   parseRetryOptions,
   requestJson,
-  resolveBaseUrl,
   resolveConfigPath,
+  resolveNanoBananaRuntime,
+  saveImageResults,
 } = require("./lib/image_api_common");
 
 const DEFAULT_BASE_URL = "https://api.bltcy.top";
@@ -36,13 +34,16 @@ async function main() {
       options: {
         "image-path": { type: "string", multiple: true },
         prompt: { type: "string" },
-        model: { type: "string", default: "nano-banana-2-4k" },
+        "model-id": { type: "string", default: "" },
+        model: { type: "string", default: "" },
         "aspect-ratio": { type: "string", default: "1:1" },
-        "image-size": { type: "string", default: "1K" },
+        resolution: { type: "string", default: "2K" },
+        "image-size": { type: "string" },
         download: { type: "string", default: "" },
         timeout: { type: "string", default: "120" },
         retry: { type: "string", default: "2" },
         "retry-delay": { type: "string", default: "800" },
+        "dry-run": { type: "boolean", default: false },
       },
       strict: true,
       allowPositionals: true,
@@ -72,8 +73,9 @@ async function main() {
     console.error("Missing required argument: --prompt");
     return 2;
   }
-  if (!["1K", "2K", "4K"].includes(values["image-size"])) {
-    console.error("Invalid --image-size. Use: 1K, 2K, or 4K");
+  const resolution = String(values.resolution || values["image-size"] || "2K").trim().toUpperCase();
+  if (!["1K", "2K", "4K"].includes(resolution)) {
+    console.error("Invalid --resolution/--image-size. Use: 1K, 2K, or 4K");
     return 2;
   }
 
@@ -91,27 +93,22 @@ async function main() {
   }
   const { retry, retryDelay } = retryOptions;
 
-  let apiKey;
-  let baseUrl;
+  let runtime;
   try {
-    const config = loadConfig(configPath);
-    apiKey = loadApiKey(config, configPath);
-    baseUrl = resolveBaseUrl(config, DEFAULT_BASE_URL);
+    runtime = resolveNanoBananaRuntime(configPath, { ...values, resolution }, DEFAULT_BASE_URL);
   } catch (error) {
     console.error(`Config error: ${error.message}`);
     return 2;
   }
 
   const form = new FormData();
-  form.append("model", values.model);
+  form.append("model", values.model || runtime.modelName);
   form.append("prompt", prompt);
   form.append("response_format", "url");
   if (values["aspect-ratio"]) {
     form.append("aspect_ratio", values["aspect-ratio"]);
   }
-  if (values["image-size"]) {
-    form.append("image_size", values["image-size"]);
-  }
+  form.append("image_size", resolution);
 
   try {
     for (const imagePath of imagePaths) {
@@ -127,18 +124,35 @@ async function main() {
     return 1;
   }
 
-  const url = `${baseUrl}/v1/images/edits`;
+  const url = `${runtime.baseUrl}/v1/images/edits`;
   console.error(`Calling API: ${url}`);
+  console.error(`Model: ${values.model || runtime.modelName}`);
   console.error(`Prompt: ${prompt}`);
   console.error(`Images: ${imagePaths.join(", ")}`);
   console.error("Generating image... please wait.");
+
+  if (values["dry-run"]) {
+    console.log(JSON.stringify({
+      ok: true,
+      dry_run: true,
+      endpoint: url,
+      provider: "nano_banana",
+      model_id: runtime.modelId,
+      model: values.model || runtime.modelName,
+      prompt,
+      aspect_ratio: values["aspect-ratio"],
+      image_size: resolution,
+      image_count: imagePaths.length,
+    }, null, 2));
+    return 0;
+  }
 
   let result;
   try {
     result = await requestJson({
       method: "POST",
       url,
-      apiKey,
+      apiKey: runtime.apiKey,
       body: form,
       timeoutSeconds: timeout,
       maxRetries: retry,
@@ -155,15 +169,8 @@ async function main() {
   console.log(JSON.stringify(result, null, 2));
 
   if (values.download) {
-    const data = result.data;
-    const imageUrl = Array.isArray(data) && data.length > 0 ? data[0].url : "";
-    if (!imageUrl) {
-      console.error("No image URL found in response['data'][0]['url']");
-      return 1;
-    }
     try {
-      await downloadFile(imageUrl, values.download, timeout, retry, retryDelay);
-      console.error(`Downloaded image -> ${values.download}`);
+      await saveImageResults(result, values.download, timeout, retry, retryDelay);
     } catch (error) {
       console.error(`Download failed: ${error.message}`);
       return 1;

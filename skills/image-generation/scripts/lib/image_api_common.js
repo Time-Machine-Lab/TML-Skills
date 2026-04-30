@@ -5,6 +5,8 @@ const path = require("node:path");
 const RETRYABLE_HTTP_STATUS = new Set([408, 425, 429, 500, 502, 503, 504]);
 const DEFAULT_MAX_RETRIES = 2;
 const DEFAULT_RETRY_DELAY_MS = 800;
+const DEFAULT_MM_AGENT_IMAGE_CONFIG =
+  "/Users/mac/Code/mm-agent/agent-module/src/main/resources/model-config/image-gen.json";
 
 function resolveConfigPath(scriptDir) {
   const fromEnv = process.env.IMAGE_API_CONFIG || "";
@@ -44,6 +46,85 @@ function loadApiKey(config, configPath) {
   return apiKey;
 }
 
+function resolveLinkedConfig(config, configPath) {
+  const fromEnv = process.env.MM_AGENT_IMAGE_GEN_CONFIG || process.env.IMAGE_MODEL_CONFIG || "";
+  const raw = String(fromEnv || config.source_config || "").trim();
+  if (!raw) {
+    return { config, configPath };
+  }
+  const linkedPath = path.resolve(path.dirname(configPath), raw);
+  return {
+    config: loadConfig(linkedPath),
+    configPath: linkedPath,
+  };
+}
+
+function loadImageModelConfig(configPath) {
+  const localConfig = loadConfig(configPath);
+  if (localConfig.source_config || process.env.MM_AGENT_IMAGE_GEN_CONFIG || process.env.IMAGE_MODEL_CONFIG) {
+    return resolveLinkedConfig(localConfig, configPath);
+  }
+  if (localConfig.gpt_image_2 || localConfig.nano_banana || localConfig.jimeng || localConfig.mj) {
+    return { config: localConfig, configPath };
+  }
+  if (fs.existsSync(DEFAULT_MM_AGENT_IMAGE_CONFIG)) {
+    return {
+      config: loadConfig(DEFAULT_MM_AGENT_IMAGE_CONFIG),
+      configPath: DEFAULT_MM_AGENT_IMAGE_CONFIG,
+    };
+  }
+  return { config: localConfig, configPath };
+}
+
+function resolveProviderModel(config, provider, modelId) {
+  const providerConfig = config && config[provider];
+  if (!providerConfig || !Array.isArray(providerConfig.models)) {
+    throw new Error(`Missing provider config '${provider}'`);
+  }
+  const requestedId = String(modelId || providerConfig.default_id || "").trim();
+  const model = providerConfig.models.find((item) => String(item.id || "").trim() === requestedId)
+    || providerConfig.models[0];
+  if (!model) {
+    throw new Error(`Provider '${provider}' has no models`);
+  }
+  return {
+    provider,
+    providerConfig,
+    model,
+    modelId: String(model.id || requestedId || "").trim(),
+    modelName: String(model.model_name || model.id || "").trim(),
+    baseUrl: String(model.base_url || providerConfig.base_url || config.base_url || "").trim(),
+    apiKey: String(model.api_key || providerConfig.api_key || config.api_key || "").trim(),
+  };
+}
+
+function resolveProviderRuntime(configPath, provider, modelId, defaultBaseUrl) {
+  const { config, configPath: resolvedConfigPath } = loadImageModelConfig(configPath);
+  const runtime = resolveProviderModel(config, provider, modelId);
+  const apiKey = runtime.apiKey;
+  if (!apiKey) {
+    throw new Error(`Missing api_key for provider '${provider}' in config file: ${resolvedConfigPath}`);
+  }
+  const baseUrl = resolveBaseUrl({ base_url: runtime.baseUrl }, defaultBaseUrl);
+  return {
+    ...runtime,
+    config,
+    configPath: resolvedConfigPath,
+    apiKey,
+    baseUrl,
+  };
+}
+
+function resolveNanoBananaRuntime(configPath, values, defaultBaseUrl) {
+  const resolution = String(values.resolution || values["image-size"] || "2K").trim().toUpperCase();
+  const explicitModelId = String(values["model-id"] || "").trim();
+  const modelId = explicitModelId || `nano-banana-${resolution.toLowerCase()}`;
+  return {
+    ...resolveProviderRuntime(configPath, "nano_banana", modelId, defaultBaseUrl),
+    resolution,
+  };
+}
+
 function resolveBaseUrl(config, defaultBaseUrl) {
   const value = String(config.base_url || defaultBaseUrl || "").trim().replace(/\/+$/, "");
   if (!value) {
@@ -58,6 +139,18 @@ function isRemoteUrl(value) {
 
 function isDataUri(value) {
   return /^data:/i.test(value);
+}
+
+function parseDataUri(value) {
+  const match = String(value || "").match(/^data:([^;,]+)?(;base64)?,(.*)$/i);
+  if (!match) {
+    throw new Error("Invalid data URI");
+  }
+  const mimeType = match[1] || "application/octet-stream";
+  const isBase64 = Boolean(match[2]);
+  const body = match[3] || "";
+  const bytes = isBase64 ? Buffer.from(body, "base64") : Buffer.from(decodeURIComponent(body), "utf8");
+  return { mimeType, bytes };
 }
 
 function guessMimeType(filePath) {
@@ -82,6 +175,52 @@ function encodeImageToDataUri(imagePath) {
   const encoded = Buffer.from(content).toString("base64");
   const mimeType = guessMimeType(imagePath);
   return `data:${mimeType};base64,${encoded}`;
+}
+
+async function inputToUploadPart(input, index, timeoutSeconds = 60) {
+  const text = String(input || "").trim();
+  if (!text) {
+    throw new Error("Empty image input");
+  }
+  if (isDataUri(text)) {
+    const parsed = parseDataUri(text);
+    return {
+      fileName: `input_${index}${extensionByMime(parsed.mimeType)}`,
+      bytes: parsed.bytes,
+      mimeType: parsed.mimeType,
+    };
+  }
+  if (isRemoteUrl(text)) {
+    const timeoutMs = Math.max(1, timeoutSeconds) * 1000;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const response = await fetch(text, {
+        method: "GET",
+        headers: { "User-Agent": "Mozilla/5.0" },
+        signal: controller.signal,
+      });
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+      const contentType = response.headers.get("content-type") || "application/octet-stream";
+      return {
+        fileName: `input_${index}${extensionByMime(contentType)}`,
+        bytes: Buffer.from(await response.arrayBuffer()),
+        mimeType: contentType.split(";")[0].trim() || "application/octet-stream",
+      };
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+  if (!fs.existsSync(text)) {
+    throw new Error(`Image file not found: ${text}`);
+  }
+  return {
+    fileName: path.basename(text),
+    bytes: fs.readFileSync(text),
+    mimeType: guessMimeType(text),
+  };
 }
 
 function sleep(ms) {
@@ -247,6 +386,55 @@ async function downloadFile(url, outputPath, timeoutSeconds, maxRetries = DEFAUL
   throw new Error("Unexpected download retry loop exit");
 }
 
+function extensionByMime(mimeType) {
+  const value = String(mimeType || "").toLowerCase();
+  if (value.includes("jpeg") || value.includes("jpg")) return ".jpg";
+  if (value.includes("webp")) return ".webp";
+  if (value.includes("gif")) return ".gif";
+  if (value.includes("svg")) return ".svg";
+  return ".png";
+}
+
+function buildIndexedPath(basePath, index, total) {
+  if (total <= 1) {
+    return basePath;
+  }
+  const ext = path.extname(basePath);
+  const stem = ext ? basePath.slice(0, -ext.length) : basePath;
+  return `${stem}_${index}${ext || ".png"}`;
+}
+
+function writeBase64Image(b64, outputPath) {
+  const raw = String(b64 || "").trim();
+  if (!raw) {
+    throw new Error("Empty b64_json");
+  }
+  fs.mkdirSync(path.dirname(path.resolve(outputPath)), { recursive: true });
+  fs.writeFileSync(outputPath, Buffer.from(raw, "base64"));
+}
+
+async function saveImageResults(result, outputPath, timeoutSeconds, retry, retryDelay) {
+  const data = Array.isArray(result && result.data) ? result.data : [];
+  if (data.length === 0) {
+    throw new Error("No image data found in response");
+  }
+  for (let i = 0; i < data.length; i += 1) {
+    const item = data[i] || {};
+    const savePath = buildIndexedPath(outputPath, i, data.length);
+    if (item.url) {
+      await downloadFile(item.url, savePath, timeoutSeconds, retry, retryDelay);
+      console.error(`Downloaded image -> ${savePath}`);
+      continue;
+    }
+    if (item.b64_json) {
+      writeBase64Image(item.b64_json, savePath);
+      console.error(`Wrote image -> ${savePath}`);
+      continue;
+    }
+    console.error(`Warning: skip image ${i}, no url or b64_json`);
+  }
+}
+
 function parseBooleanString(raw) {
   if (raw === undefined || raw === null) {
     return null;
@@ -332,17 +520,27 @@ function mergePromptWithPositionals(promptValue, positionals) {
 module.exports = {
   DEFAULT_MAX_RETRIES,
   DEFAULT_RETRY_DELAY_MS,
+  DEFAULT_MM_AGENT_IMAGE_CONFIG,
+  buildIndexedPath,
   downloadFile,
   encodeImageToDataUri,
+  extensionByMime,
+  inputToUploadPart,
   isDataUri,
   isRemoteUrl,
   loadApiKey,
   loadConfig,
+  loadImageModelConfig,
   mergePromptWithPositionals,
   normalizeArgvForMultiValueOptions,
   parseBooleanString,
+  parseDataUri,
   parseRetryOptions,
   requestJson,
   resolveBaseUrl,
   resolveConfigPath,
+  resolveNanoBananaRuntime,
+  resolveProviderRuntime,
+  saveImageResults,
+  writeBase64Image,
 };

@@ -1,23 +1,21 @@
 #!/usr/bin/env node
-const path = require("node:path");
 const { parseArgs } = require("node:util");
 const {
-  downloadFile,
   encodeImageToDataUri,
   isDataUri,
   isRemoteUrl,
-  loadApiKey,
-  loadConfig,
   mergePromptWithPositionals,
   normalizeArgvForMultiValueOptions,
   parseBooleanString,
   parseRetryOptions,
   requestJson,
-  resolveBaseUrl,
   resolveConfigPath,
+  resolveProviderRuntime,
+  saveImageResults,
 } = require("./lib/image_api_common");
 
 const DEFAULT_BASE_URL = "https://api.bltcy.top";
+const DEFAULT_PROVIDER = "jimeng";
 
 function getImages(values) {
   const raw = values.image;
@@ -42,7 +40,7 @@ function buildPayload(values, images) {
   if (values["guidance-scale"] !== undefined) {
     payload.guidance_scale = values["guidance-scale"];
   }
-  if (values.watermark !== undefined) {
+  if (values.watermark !== undefined && values.watermark !== null) {
     payload.watermark = values.watermark;
   }
 
@@ -51,15 +49,6 @@ function buildPayload(values, images) {
   }
 
   return payload;
-}
-
-function buildDownloadPath(basePath, index, total) {
-  if (total === 1) {
-    return basePath;
-  }
-  const ext = path.extname(basePath);
-  const stem = ext ? basePath.slice(0, -ext.length) : basePath;
-  return `${stem}_${index}${ext}`;
 }
 
 async function main() {
@@ -73,7 +62,8 @@ async function main() {
       args: normalizedArgv,
       options: {
         prompt: { type: "string" },
-        model: { type: "string", default: "doubao-seedream-4-5-251128" },
+        "model-id": { type: "string", default: "" },
+        model: { type: "string", default: "" },
         "response-format": { type: "string", default: "url" },
         size: { type: "string", default: "2K" },
         seed: { type: "string" },
@@ -85,6 +75,7 @@ async function main() {
         download: { type: "string", default: "" },
         image: { type: "string", multiple: true },
         n: { type: "string", default: "1" },
+        "dry-run": { type: "boolean", default: false },
       },
       strict: true,
       allowPositionals: true,
@@ -161,12 +152,9 @@ async function main() {
     }
   }
 
-  let apiKey;
-  let baseUrl;
+  let runtime;
   try {
-    const config = loadConfig(configPath);
-    apiKey = loadApiKey(config, configPath);
-    baseUrl = resolveBaseUrl(config, DEFAULT_BASE_URL);
+    runtime = resolveProviderRuntime(configPath, DEFAULT_PROVIDER, values["model-id"], DEFAULT_BASE_URL);
   } catch (error) {
     console.error(`Config error: ${error.message}`);
     return 2;
@@ -192,6 +180,7 @@ async function main() {
     {
       ...values,
       prompt,
+      model: values.model || runtime.modelName,
       n,
       seed,
       "guidance-scale": guidanceScale,
@@ -200,16 +189,30 @@ async function main() {
     processedImages,
   );
 
-  const url = `${baseUrl}/v1/images/generations`;
+  const url = `${runtime.baseUrl}/v1/images/generations`;
   console.error(`Calling API: ${url}`);
+  console.error(`Model: ${payload.model}`);
   console.error("Generating image... please wait.");
+
+  if (values["dry-run"]) {
+    console.log(JSON.stringify({
+      ok: true,
+      dry_run: true,
+      endpoint: url,
+      provider: DEFAULT_PROVIDER,
+      model_id: runtime.modelId,
+      payload,
+      image_count: processedImages.length,
+    }, null, 2));
+    return 0;
+  }
 
   let result;
   try {
     result = await requestJson({
       method: "POST",
       url,
-      apiKey,
+      apiKey: runtime.apiKey,
       body: payload,
       timeoutSeconds: timeout,
       maxRetries: retry,
@@ -222,25 +225,12 @@ async function main() {
 
   console.log(JSON.stringify(result, null, 2));
 
-  if (values.download && values["response-format"] === "url") {
-    const data = Array.isArray(result.data) ? result.data : [];
-    if (data.length === 0) {
-      console.error("No image data found in response");
+  if (values.download) {
+    try {
+      await saveImageResults(result, values.download, timeout, retry, retryDelay);
+    } catch (error) {
+      console.error(`Download failed: ${error.message}`);
       return 1;
-    }
-
-    for (let i = 0; i < data.length; i += 1) {
-      const imageUrl = data[i] && data[i].url;
-      if (!imageUrl) {
-        continue;
-      }
-      const savePath = buildDownloadPath(values.download, i, data.length);
-      try {
-        await downloadFile(imageUrl, savePath, timeout, retry, retryDelay);
-        console.error(`Downloaded image -> ${savePath}`);
-      } catch (error) {
-        console.error(`Download failed for ${savePath}: ${error.message}`);
-      }
     }
   }
 
