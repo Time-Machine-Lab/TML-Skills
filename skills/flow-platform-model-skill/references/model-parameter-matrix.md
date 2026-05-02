@@ -1,6 +1,8 @@
-# Google Flow 模型参数矩阵
+# Flow 平台模型参数矩阵
 
-本文件是 Google Flow 调研主表。每次新增模型、接口、抓包证据或实验结果，都优先更新这里。
+本文件是 Flow 平台生成能力参数表。每次新增 provider、模型、接口、抓包证据或调用结果，都优先更新这里。
+
+当前已完整沉淀的 provider 是 Google Flow / aisandbox / Labs；新增其他 provider 时，在本文件追加对应章节，不要和 Google Flow 字段混写。
 
 状态标记：
 
@@ -65,8 +67,8 @@ POST https://aisandbox-pa.googleapis.com/v1/flow/uploadImage
 | --- | --- |
 | `media.name` | 后续传入 `requests[].imageInputs[].name` |
 | `media.projectId` | 校验是否同项目 |
-| `media.workflowId` | 调研记录 |
-| `workflow.name` | 调研记录 |
+| `media.workflowId` | 调用记录 |
+| `workflow.name` | 调用记录 |
 
 认证/session：
 
@@ -223,7 +225,7 @@ POST /v1:uploadUserImage
 | 字段 | 用途 |
 | --- | --- |
 | `mediaGenerationId.mediaGenerationId` | VEO `mediaId` |
-| `height` / `width` | 调研记录 |
+| `height` / `width` | 调用记录 |
 | `error` | 上传失败记录 |
 
 状态查询：

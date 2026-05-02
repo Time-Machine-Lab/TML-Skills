@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Google Flow / aisandbox auxiliary probe client.
 
-This module is only for validating research assumptions. It intentionally uses
-only the Python standard library so it can be copied into small test
-environments without dependency setup.
+This module powers the Flow platform generation scripts. It intentionally uses
+only the Python standard library so it can run in small environments without
+dependency setup.
 """
 
 from __future__ import annotations
@@ -24,15 +24,6 @@ from typing import Any, Dict, Iterable, List, Optional
 
 GOOGLE_AI_BASE_URL = os.environ.get("GOOGLE_AI_BASE_URL", "https://aisandbox-pa.googleapis.com")
 DEFAULT_ACCOUNTS_FILE = Path(__file__).resolve().parents[1] / "secrets" / "accounts.local.json"
-GOOGLE_RECAPTCHA_WEBSITE_URL = "https://labs.google/"
-GOOGLE_RECAPTCHA_WEBSITE_KEY = "6LdsFiUsAAAAAIjVDZcuLhaHiDn5nnHVXVRQGeMV"
-GOOGLE_RECAPTCHA_WEBSITE_TITLE = "Flow - ModelMaster"
-GOOGLE_RECAPTCHA_IMAGE_ACTION = "IMAGE_GENERATION"
-GOOGLE_RECAPTCHA_VIDEO_ACTION = "VIDEO_GENERATION"
-RECAPTCHA_RETRY_REASONS = {
-    "PUBLIC_ERROR_SOMETHING_WENT_WRONG",
-    "PUBLIC_ERROR_UNUSUAL_ACTIVITY",
-}
 
 
 class FlowPlatformError(RuntimeError):
@@ -40,10 +31,6 @@ class FlowPlatformError(RuntimeError):
         super().__init__(message)
         self.status = status
         self.body = body
-
-
-class CaptchaSolveError(RuntimeError):
-    pass
 
 
 def load_account_profile(accounts_file: Optional[str], profile_name: Optional[str]) -> Dict[str, Any]:
@@ -118,11 +105,6 @@ def _json_request(method: str, url: str, headers: Dict[str, str], payload: Optio
         raise FlowPlatformError(f"request failed for {url}: {exc.reason}") from exc
 
 
-def is_recaptcha_retry_error(exc: FlowPlatformError) -> bool:
-    reason = str(exc)
-    return reason.endswith("403") or reason in RECAPTCHA_RETRY_REASONS or exc.status == 403
-
-
 def _extract_google_error_reason(raw: str) -> Optional[str]:
     try:
         root = json.loads(raw)
@@ -177,124 +159,6 @@ def random_seed() -> int:
 
 def session_id() -> str:
     return ";" + str(int(time.time() * 1000))
-
-
-def create_captcha_solver(account: Dict[str, Any]) -> Optional["CaptchaSolver"]:
-    config = account.get("captcha") or {}
-    if not config:
-        return None
-    provider = (config.get("provider") or "none").lower()
-    if provider in {"", "none", "manual"}:
-        return None
-    if provider != "capsolver":
-        raise CaptchaSolveError(f"暂不支持的 captcha provider: {provider}")
-    client_key = first_value(os.environ.get("CAPSOLVER_CLIENT_KEY"), config.get("client_key"), config.get("key"))
-    if not client_key:
-        raise CaptchaSolveError("缺少 Capsolver client_key：请设置 CAPSOLVER_CLIENT_KEY，或在账号 captcha.client_key 中配置")
-    return CaptchaSolver(
-        provider=provider,
-        client_key=client_key,
-        base_url=config.get("base_url") or "https://api.capsolver.com",
-        poll_interval_ms=int(config.get("poll_interval_ms") or 4000),
-        max_poll_times=int(config.get("max_poll_times") or 6),
-        feedback_enabled=as_bool(config.get("feedback_enabled"), True),
-        task_type=config.get("task_type") or "ReCaptchaV3TaskProxyLess",
-        website_url=config.get("website_url") or GOOGLE_RECAPTCHA_WEBSITE_URL,
-        website_key=config.get("website_key") or GOOGLE_RECAPTCHA_WEBSITE_KEY,
-        website_title=config.get("website_title"),
-    )
-
-
-class CaptchaSolver:
-    def __init__(
-        self,
-        provider: str,
-        client_key: str,
-        base_url: str,
-        poll_interval_ms: int,
-        max_poll_times: int,
-        feedback_enabled: bool,
-        task_type: str,
-        website_url: str,
-        website_key: str,
-        website_title: str,
-    ):
-        self.provider = provider
-        self.client_key = client_key
-        self.base_url = base_url.rstrip("/")
-        self.poll_interval_ms = poll_interval_ms
-        self.max_poll_times = max_poll_times
-        self.feedback_enabled = feedback_enabled
-        self.task_type = task_type
-        self.website_url = website_url
-        self.website_key = website_key
-        self.website_title = website_title
-
-    def solve(self, page_action: str) -> Dict[str, Any]:
-        task = self._task_payload(page_action)
-        created = self._post("/createTask", {"clientKey": self.client_key, "task": task})
-        task_id = created.get("taskId")
-        if not task_id:
-            raise CaptchaSolveError(f"创建 recaptcha 任务失败: {created}")
-
-        for _ in range(self.max_poll_times):
-            time.sleep(self.poll_interval_ms / 1000)
-            result = self._post("/getTaskResult", {"clientKey": self.client_key, "taskId": task_id})
-            if result.get("status") != "ready":
-                continue
-            solution = result.get("solution") or {}
-            token = solution.get("gRecaptchaResponse")
-            if not token:
-                raise CaptchaSolveError(f"recaptcha 任务已 ready 但没有 gRecaptchaResponse: {result}")
-            return {
-                "provider": self.provider,
-                "task_id": task_id,
-                "token": token,
-                "user_agent": solution.get("userAgent"),
-                "page_action": page_action,
-            }
-        raise CaptchaSolveError(f"recaptcha 任务轮询超时: taskId={task_id}")
-
-    def feedback(self, solution: Optional[Dict[str, Any]], solved: bool) -> bool:
-        if not self.feedback_enabled or not solution or not solution.get("task_id"):
-            return False
-        payload = {
-            "clientKey": self.client_key,
-            "solved": solved,
-            "task": self._task_payload(solution.get("page_action") or GOOGLE_RECAPTCHA_IMAGE_ACTION),
-            "result": {
-                "errorId": 0,
-                "taskId": solution["task_id"],
-                "status": "ready",
-            },
-        }
-        try:
-            result = self._post("/feedbackTask", payload)
-            return result.get("errorId") == 0
-        except CaptchaSolveError:
-            return False
-
-    def _task_payload(self, page_action: str) -> Dict[str, Any]:
-        task = {
-            "type": self.task_type,
-            "websiteURL": self.website_url,
-            "websiteKey": self.website_key,
-            "pageAction": page_action,
-        }
-        if self.website_title:
-            task["websiteTitle"] = self.website_title
-        return task
-
-    def _post(self, path: str, payload: Dict[str, Any]) -> Dict[str, Any]:
-        result = _json_request(
-            "POST",
-            self.base_url + path,
-            {"User-Agent": "ModelMaster-CapsolverClient/1.0", "Content-Type": "application/json"},
-            payload,
-        )
-        if result.get("errorId") not in (None, 0):
-            raise CaptchaSolveError(f"captcha provider error: {result}")
-        return result
 
 
 def image_aspect_ratio(value: str) -> str:

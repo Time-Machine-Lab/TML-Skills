@@ -1,6 +1,6 @@
-# ModelMaster Google Flow API 调研记录
+# Google Flow API 能力参考
 
-本文件从 `/Users/mac/Code/ModelMaster/model-master-app` 抽取，只记录 Google Flow / aisandbox / Labs 相关链路。调研时间：2026-04-30。
+本文件从 `/Users/mac/Code/ModelMaster/model-master-app` 抽取，用于支撑本 skill 的 Google Flow / aisandbox / Labs 图片和视频生成能力。抽取时间：2026-04-30。
 
 ## 源码位置
 

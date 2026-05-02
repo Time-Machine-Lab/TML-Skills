@@ -161,11 +161,11 @@ VEO 视频提交后轮询：
 - VEO 视频：下载 `operation.metadata.video.fifeUrl`。
 - VEO 封面：下载 `operation.metadata.video.servingBaseUri`。
 
-如果只做接口调研，可以保留 Google 原始 URL；如果做产品可用性验证，需要记录下载是否成功。
+如果只需要快速验证调用，可以保留 Google 原始 URL；如果要交付可用产物，需要记录下载是否成功。
 
 ## 9. 高可用检查清单
 
-调研或复现接口前，至少检查：
+生成或复现调用前，至少检查：
 
 - `google_ai_token` 是否可用，失败时是否返回 `TOKEN_EXPIRED`。
 - `google_ai_cookie` 是否可用，Labs/TRPC 失败时是否返回 `COOKIE_EXPIRED`。
@@ -175,4 +175,4 @@ VEO 视频提交后轮询：
 - 账号是否需要 `is_fast`，因为它会改变 VEO model key。
 - 图片上传返回的是 Flow `media.name` 还是 VEO `mediaGenerationId.mediaGenerationId`，两者不能混用。
 - 轮询 operation name 是否来自同一次提交响应。
-- 失败响应里的 reason 是否写入实验记录。
+- 失败响应里的 reason 是否写入调用记录。

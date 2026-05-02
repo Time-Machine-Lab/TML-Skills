@@ -7,5 +7,6 @@ sessions/*.har
 sessions/*.json
 sessions/*.txt
 !secrets/accounts.example.json
+!secrets/captcha.example.json
 !secrets/README.md
 !sessions/README.md

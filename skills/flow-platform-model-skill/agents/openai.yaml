@@ -1,0 +1,4 @@
+interface:
+  display_name: "Flow Platform Model Skill"
+  short_description: "Generate images and videos through Flow platform models."
+  default_prompt: "Use this skill to generate images or videos through Flow platform models, handling account config, captcha, uploads, polling, downloads, and errors."
