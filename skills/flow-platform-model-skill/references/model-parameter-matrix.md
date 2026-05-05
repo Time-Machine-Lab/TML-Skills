@@ -88,6 +88,7 @@ POST https://aisandbox-pa.googleapis.com/v1/flow/uploadImage
 | `clientContext.recaptchaContext.applicationType` | 是 | `RECAPTCHA_APPLICATION_TYPE_WEB` | 固定 |
 | `clientContext.recaptchaContext.token` | 是 | recaptcha token | 短有效期 |
 | `clientContext.tool` | 是 | `PINHOLE` | 固定 |
+| `mediaGenerationContext.batchId` | 建议 | UUID | Google 返回的多个 workflow 会共享该 batchId；浏览器抓包和本 skill 均携带 |
 | `requests[].seed` | 是 | 1-6 位随机数 | 旧代码 `RandomUtil.generateRandomSeed(6)` |
 | `requests[].imageModelName` | 是 | 见模型映射 | Google 内部模型名 |
 | `requests[].imageAspectRatio` | 是 | 见比例映射 | Google 内部比例枚举 |
@@ -102,20 +103,35 @@ POST https://aisandbox-pa.googleapis.com/v1/flow/uploadImage
 | 产品模型 | Google `imageModelName` | Prompt 传法 | 状态 | 证据 |
 | --- | --- | --- | --- | --- |
 | `Nano-Banana` | `GEM_PIX` | `prompt` | 已确认 | `GoogleAIService.packageFlowGenerateImageRequest` |
-| `Nano-Banana-Pro` | `GEM_PIX_2` | `prompt` | 已确认 | 同上 |
+| `Nano-Banana-Pro` | `GEM_PIX_2` | `prompt` | 已确认；抓包里也出现过 `structuredPrompt`，但脚本优先用 `prompt` | 同上 + 实测 |
 | `Nano-Banana-2` | `NARWHAL` | `structuredPrompt.parts[].text`，`prompt = null` | 已确认 | 同上 |
 | `imagen4` | `IMAGEN_3_5` | `prompt` | 已确认但命名待核对 | 同上 |
 | 其他 | `IMAGEN_3_5` | `prompt` | 已确认 fallback | 同上 |
 
-比例映射：
+比例和分辨率映射：
 
-| 产品 `aspectRatio` | Google `imageAspectRatio` | 状态 |
+| 产品 `aspectRatio` | Google `imageAspectRatio` | 实测响应尺寸 | 状态 |
+| --- | --- | --- | --- |
+| `16:9` | `IMAGE_ASPECT_RATIO_LANDSCAPE` | `1376x768` | Nano-Banana-2 / Nano-Banana-Pro 已确认 |
+| `4:3` | `IMAGE_ASPECT_RATIO_LANDSCAPE_FOUR_THREE` | `1200x896` | Nano-Banana-2 / Nano-Banana-Pro 已确认 |
+| `1:1` | `IMAGE_ASPECT_RATIO_SQUARE` | `1024x1024` | Nano-Banana-2 / Nano-Banana-Pro 已确认 |
+| `3:4` | `IMAGE_ASPECT_RATIO_PORTRAIT_THREE_FOUR` | `896x1200` | Nano-Banana-2 / Nano-Banana-Pro 已确认 |
+| `9:16` | `IMAGE_ASPECT_RATIO_PORTRAIT` | `768x1376` | Nano-Banana-2 / Nano-Banana-Pro 已确认 |
+
+旧 ModelMaster 后端 `GoogleAIService.getAspectRatio(..., "image")` 只把 `16:9`、`9:16`、`1:1` 映射到 Flow 枚举，`4:3` / `3:4` 会 fallback 到 `16:9`。但常量和前端已有 `IMAGE_ASPECT_RATIO_LANDSCAPE_FOUR_THREE` / `IMAGE_ASPECT_RATIO_PORTRAIT_THREE_FOUR`，浏览器抓包和本地实测确认 Flow 接口支持这两个比例。
+
+Batch 行为：
+
+| 场景 | 结果 | 说明 |
 | --- | --- | --- |
-| `16:9` | `IMAGE_ASPECT_RATIO_LANDSCAPE` | 已确认 |
-| `9:16` | `IMAGE_ASPECT_RATIO_PORTRAIT` | 已确认 |
-| `1:1` | `IMAGE_ASPECT_RATIO_SQUARE` | 已确认 |
-| `4:3` | 待验证 | DTO 注释支持，但 Flow 映射未写 |
-| `3:4` | 待验证 | DTO 注释支持，但 Flow 映射未写 |
+| 同模型、同 prompt、同分辨率，多 seed | 支持 | `--count 2` 实测一次返回 2 个 `media` 和 2 个 `workflow` |
+| 同模型、不同 prompt | 支持 | `requests[]` 可分别传不同 `prompt` / `seed` |
+| 同模型、不同分辨率 | 支持 | `NARWHAL` 同 batch 中 `1:1` + `3:4` 实测通过 |
+| 不同模型混 batch | 不支持 | `NARWHAL` + `GEM_PIX_2` 同 batch 返回 HTTP 400 `INVALID_ARGUMENT` |
+
+因此本 skill 的 batch 约束是：同一个 `flowMedia:batchGenerateImages` 请求只能混合同一个 `imageModelName` 下的不同 prompt / seed / aspectRatio；不同模型必须拆成多次请求，并分别获取 recaptcha token。单次 batch 上限按 Flow UI 控制在 4 条。
+
+并发证据：`sessions/batch-concurrency-probe.local.json` 本地实测中，3 条 `NARWHAL` 请求共享同一个 `batchId`，3 个 workflow 的 `createTime` 最大差约 20ms，返回内容分别匹配红色立方体、蓝色球体、绿色金字塔 prompt；`updateTime` 相差约 19s，说明同批提交后各 workflow 独立完成。
 
 响应关键字段：
 
@@ -145,12 +161,12 @@ POST https://aisandbox-pa.googleapis.com/v1/flow/uploadImage
 | 字段 | 必填 | 说明 |
 | --- | --- | --- |
 | `prompt` | 是 | 提示词 |
-| `model` | 是 | 产品模型名，Google direct 路径主要是 `veo3.1-fast`、`veo3.1-pro` |
+| `model` | 是 | 产品模型名；当前主路径使用 `veo3.1-quality`，等价映射到 Quality/Pro key |
 | `videoAspectRatio` | 是 | `16:9` 或 `9:16` 为主 |
 | `workSpaceId` | 是 | 业务字段 |
 | `number` | 是 | 默认 1，注解限制 1-2，但提示写“大于1”不一致 |
 | `genType` | 否 | 业务模式字段 |
-| `duration` | 否 | Google direct VEO 旧逻辑未传到平台 |
+| `duration` | 否 | UI 有 4/6/8 秒选项；当前 direct VEO payload 不发送，`durationSeconds` 已实测会被 Google 以 `INVALID_ARGUMENT` 拒绝 |
 | `resolution` | 否 | Google direct VEO 旧逻辑未传到平台 |
 
 产品 API 路径：
@@ -188,7 +204,7 @@ POST https://aisandbox-pa.googleapis.com/v1/flow/uploadImage
 | `referenceImages` | 是 | Google VEO 3.1 fast 旧业务限制 1-3 张 |
 | `referenceImages[].imageBase64` | 是 | 参考图 |
 | `referenceImages[].mimeType` | 是 | 参考图 MIME |
-| `duration` | 否 | Google direct VEO 旧逻辑未传到平台 |
+| `duration` | 否 | UI 有 4/6/8 秒选项；当前 direct VEO payload 不发送，`durationSeconds` 已实测会被 Google 以 `INVALID_ARGUMENT` 拒绝 |
 
 ### 2.2 Google aisandbox 直连 VEO
 
@@ -202,6 +218,8 @@ POST https://aisandbox-pa.googleapis.com/v1/flow/uploadImage
 | 图生视频 | `POST /v1/video:batchAsyncGenerateVideoStartImage` |
 | 首尾帧 | `POST /v1/video:batchAsyncGenerateVideoStartAndEndImage` |
 | 参考图 | `POST /v1/video:batchAsyncGenerateVideoReferenceImages` |
+
+这些 endpoint 的名称包含 `batchAsync`，但本 skill 的公开视频入口按单任务提交：每次只放一个 `requests[]`，多个视频由外层循环调用脚本。原因是 VEO batch 会让比例、model key、首尾帧素材和验证码重试耦合在一起；实测混合 `16:9` / `9:16` 的首尾帧 batch 曾被服务端统一成 landscape/key，结果不适合作为高可用默认路径。
 
 图片上传：
 
@@ -280,6 +298,9 @@ POST /v1/video:batchCheckAsyncVideoGenerationStatus
 | `veo3.1-pro` | 图生 | `veo_3_1_i2v_s` | `veo_3_1_i2v_s_portrait` | 已确认 |
 | `veo3.1-pro` | 首尾帧 | `veo_3_1_i2v_s_fl` | `veo_3_1_i2v_s_portrait_fl` | 已确认 |
 | `veo3.1-pro` | 参考图 | 待验证 | 待验证 | 旧 util 未配置 |
+| `veo3.1-quality` | 文生 | `veo_3_1_t2v` | `veo_3_1_t2v_portrait` | 当前推荐别名 |
+| `veo3.1-quality` | 图生 | `veo_3_1_i2v_s` | `veo_3_1_i2v_s_portrait` | 当前推荐别名 |
+| `veo3.1-quality` | 首尾帧 | `veo_3_1_i2v_s_fl` | `veo_3_1_i2v_s_portrait_fl` | 当前推荐别名 |
 
 账号 fast 逻辑：
 
@@ -327,6 +348,7 @@ POST /v1/video:batchCheckAsyncVideoGenerationStatus
 ## 3. Google Labs 项目接口
 
 项目创建不走 aisandbox token，而是走 Labs cookie。
+新账号没有 Flow 工作区时，必须先创建项目并把 `projectId` 写入 profile 的 `project_id`，否则图片/视频生成缺少 `clientContext.projectId`。
 
 Endpoint：
 
@@ -353,23 +375,24 @@ POST https://labs.google/fx/api/trpc/project.createProject
 | `result.data.json.result.projectId` | Flow projectId |
 | `result.data.json.result.projectInfo.projectTitle` | 项目标题 |
 
+本 skill 脚本：
+
+```bash
+python3 scripts/create_labs_project.py --account-profile <profile> --update-account --update-cookie
+```
+
 ## 4. 高可用相关参数
 
-| 参数 | 图片 | 视频 | 来源 |
-| --- | --- | --- | --- |
-| `accountNum` | 默认 3 | 默认 3 | `mmPermission.system.googleAccount.image/video.accountNum` |
-| `reqLimit` | 默认 3 | 默认 1 | `mmPermission.system.googleAccount.image/video.reqLimit` |
-| `coldDownTime` | 默认 2 小时 | 默认 2 小时 | `mmPermission.system.googleAccount.image/video.coldDownTime` |
-| `threadNum` | 固定消费者配置 | 默认 6 | `mmPermission.system.googleAccount.video.threadNum` |
-| `cycleTime` | 约 1 秒监控 | 默认 2000ms | `mmPermission.system.googleAccount.video.cycleTime` |
+本 skill 不内置固定多账号调度参数。外层如果要并发调度，建议只把这些作为默认策略输入：
 
-错误到账号状态：
-
-| reason | 状态 |
-| --- | --- |
-| `PUBLIC_ERROR_USER_REQUESTS_THROTTLED` | `REQUEST_HIGH` |
-| `TOKEN_EXPIRED` | `TOKEN_EXPIRED` |
-| `COOKIE_EXPIRED` | `DEAD` |
+| 参数 | 建议 | 说明 |
+| --- | --- | --- |
+| 图片 batch 上限 | 4 | 与 Flow UI x1-x4 对齐 |
+| 图片同批模型 | 同一 `imageModelName` | 混模型会触发 `INVALID_ARGUMENT` |
+| 视频提交方式 | 单任务循环 | 不把 VEO batch 作为公开能力，避免比例/model key/首尾帧耦合 |
+| 视频轮询间隔 | 10 秒 | 避免状态查询过密 |
+| profile 限流处理 | 切换或冷却 | 由 `error_classification.profile_action` 指示 |
+| captcha 重试 | 新 token 重试 | 403 类错误 feedback false 后再取 token |
 
 ## 5. Recaptcha 参数
 
@@ -384,7 +407,7 @@ POST https://labs.google/fx/api/trpc/project.createProject
 | --- | --- |
 | `websiteURL` | `https://labs.google/` |
 | `websiteKey` | `6LdsFiUsAAAAAIjVDZcuLhaHiDn5nnHVXVRQGeMV` |
-| `websiteTitle` | `Flow - ModelMaster` |
+| `websiteTitle` | 可不传 |
 | `applicationType` | `RECAPTCHA_APPLICATION_TYPE_WEB` |
 | provider task type | `ReCaptchaV3TaskProxyLess` |
 
@@ -417,5 +440,5 @@ Capsolver 默认策略：
 | Google Flow `Nano-Banana-2` | `NARWHAL` 支持的所有参数，尤其 `4:3`、`3:4`、`imageInputs` 数量 |
 | Google Flow `imagen4` | 为什么映射为 `IMAGEN_3_5`，是否旧命名或后端兼容 |
 | Google VEO 3.1 Pro 参考图 | 旧 util 无 model key，需要抓包或实测 |
-| Google VEO | `duration`、`resolution` 是否有隐藏字段，旧 direct path 未传 |
+| Google VEO | `duration`、`resolution` 是否有隐藏字段；`durationSeconds` 不是合法字段 |
 | recaptcha | token 有效期、userAgent 是否强绑定、错误 reason 映射 |

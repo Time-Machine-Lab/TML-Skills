@@ -1,178 +1,148 @@
-# Google Flow 高可用与运行细节
+# Google Flow 高可用运行策略
 
-本文件补充旧项目里 Google Flow/aisandbox 的账号池、recaptcha、重试、错误处理和资源下载逻辑。它不是接口字段矩阵，而是确保调用稳定性时必须参考的运行策略。
+本文件描述本 skill 自身的稳定运行策略。它不绑定任何旧业务系统的账号状态、持久化结构或任务队列；外层系统如果需要多 profile 调度，可以基于这里的 `profile_action` 自行实现。
 
-## 1. 账号来源和字段
+## 1. Profile 模型
 
-旧项目从 `other_account` 表读取 Google 账号，统一转换成 `GoogleAccountManager.VEO3Account`。
-
-核心字段：
-
-| 字段 | 来源 | 用途 |
-| --- | --- | --- |
-| `accountId` | `other_account.account_id` | 账号池去重和状态更新 |
-| `cookie` | `other_account.cookie` | Labs/TRPC 接口，如 `project.createProject` |
-| `token` | `other_account.token` | aisandbox 接口 `Authorization` |
-| `projectId` | `JSON.parse(extraData).projectId` | Flow 项目和 `clientContext.projectId` |
-| `isFast` | `JSON.parse(extraData).isFast` | VEO fast key 调整 |
-| `type` | `other_account.type` | 视频账号类型检查预留逻辑 |
-
-本 skill 的 `secrets/accounts.local.json` 应至少保存：
+一个 Flow profile 表示一组可以完成 Google Flow/Labs 调用的本地凭证：
 
 ```json
 {
   "google_ai_token": "",
   "google_ai_cookie": "",
+  "token_expires": "",
   "project_id": "",
-  "is_fast": false,
-  "account_type": null
+  "is_fast": false
 }
 ```
 
-## 2. 图片和视频账号池分离
+字段职责：
 
-旧项目不是一个池子跑所有任务：
+| 字段 | 用途 |
+| --- | --- |
+| `google_ai_token` | aisandbox `Authorization`，通常是 `Bearer <access_token>` |
+| `google_ai_cookie` | Labs Cookie header，用于 `/fx/api/auth/session` 刷新 access token |
+| `token_expires` | access token 过期时间，只作为刷新前的预检查 |
+| `project_id` | Flow projectId，必须和当前登录账号匹配 |
+| `is_fast` | VEO fast 账号的 model key 兼容开关 |
 
-| 管理器 | 用途 | 配置路径 | 兜底值 |
+本 skill 只读取/更新本地 profile，不定义业务侧 profile 状态。
+
+## 2. Session 与 Token
+
+推荐在生成前先检查 Labs session：
+
+```bash
+python3 scripts/check_labs_session.py \
+  --account-profile google-flow-default \
+  --update-account \
+  --update-cookie
+```
+
+运行策略：
+
+- `google_ai_token` 过期时，优先用 `google_ai_cookie` 调 `/fx/api/auth/session` 刷新。
+- 响应里的 `access_token` 写回 `google_ai_token`，前面加 `Bearer `。
+- 响应里的 `expires` 写回 `token_expires`。
+- 如果响应有 `Set-Cookie`，合并回 `google_ai_cookie`，避免 NextAuth session-token 轮换后旧 cookie 失效。
+- 如果 cookie 也失效，外层应重新登录或切换 profile。
+
+## 3. Captcha 策略
+
+生成图片和视频前都需要一次性 recaptcha v3 token：
+
+| 场景 | pageAction |
+| --- | --- |
+| 图片生成 | `IMAGE_GENERATION` |
+| 视频生成 | `VIDEO_GENERATION` |
+
+运行策略：
+
+- 不把一次性 `recaptcha_token` 写入配置文件。
+- 每次提交生成前由 `captcha_service.py` 动态获取 token。
+- solver 返回的 `userAgent` 透传到 Google API header。
+- 生成成功后 feedback `solved=true`。
+- 遇到 403 类验证码/风控错误后 feedback `solved=false`，再取新 token 重试。
+- 新增验证码平台时只扩展 `CaptchaProvider`，图片/视频生成逻辑不感知具体 provider。
+
+## 4. 限流与并发
+
+Google Flow 的限流以当前 profile、网络环境、模型和时间窗口综合触发。skill 不内置固定调度池，只提供脚本级建议：
+
+- 单个图片 batch 控制在 4 条以内。
+- 同一个图片 batch 只能使用同一 `imageModelName`。
+- 遇到 `PUBLIC_ERROR_USER_REQUESTS_THROTTLED`、HTTP `429`、`RESOURCE_EXHAUSTED`、quota/rate limit 字样时，当前 profile 应暂停继续提交。
+- 外层系统可以选择切换 profile、降低并发、排队或冷却后重试。
+- 视频任务提交后轮询不应过密，默认 10 秒一次。
+
+## 5. 错误分类输出
+
+生成脚本失败时会向 stderr 输出：
+
+```text
+error_classification={...}
+```
+
+字段含义：
+
+| 字段 | 含义 |
+| --- | --- |
+| `reason` | Google 原始 reason 或本地错误摘要 |
+| `category` | 归一化错误类别 |
+| `profile_action` | 建议外层对当前 profile 采取的动作 |
+| `retryable` | 是否适合自动重试 |
+| `retry_scope` | 重试范围：新 captcha、刷新 token、换 profile、稍后同请求等 |
+| `recovery_action` | 人类可读恢复动作 |
+| `provider_health_failure` | 是否应计入 Flow/provider 可用性问题 |
+
+分类表：
+
+| 条件 | category | profile_action | retry_scope |
 | --- | --- | --- | --- |
-| `GoogleImageAccountManager` | Google Flow 生图 | `mmPermission.system.googleAccount.image` | `accountNum=3`、`reqLimit=3`、`coldDownTime=2h`、`hotNum=400` |
-| `GoogleVideoAccountManager` | Google VEO 视频 | `mmPermission.system.googleAccount.video` | `accountNum=3`、`reqLimit=1`、`coldDownTime=2h`、`hotNum=400` |
+| 本地 profile 缺字段 | `local_account_config` | `fix_local_profile` | `fix_local_profile` |
+| 本地请求参数不合法 | `invalid_request` | `none` | `fix_parameters` |
+| HTTP `401` 或 `TOKEN_EXPIRED` | `auth_token_expired` | `refresh_access_token` | `refresh_labs_session` |
+| `COOKIE_EXPIRED` | `labs_cookie_expired` | `refresh_cookie_or_relogin` | `relogin_or_replace_cookie` |
+| `PUBLIC_ERROR_USER_REQUESTS_THROTTLED` / HTTP `429` / `RESOURCE_EXHAUSTED` / quota/rate limit | `account_rate_limited` | `cooldown_or_rotate` | `different_account_or_after_cooldown` |
+| HTTP `403` / reason 以 `403` 结尾 / `PUBLIC_ERROR_SOMETHING_WENT_WRONG` / `PUBLIC_ERROR_UNUSUAL_ACTIVITY` | `recaptcha_or_risk_gate` | `retry_with_new_captcha` | `new_recaptcha_token` |
+| 内容安全类 reason | `content_policy` | `none` | `change_prompt_or_input_media` |
+| HTTP `400` / `INVALID_ARGUMENT` | `invalid_request` | `none` | `fix_parameters` |
+| HTTP `5xx` / `PUBLIC_ERROR_HIGH_TRAFFIC` / `PUBLIC_ERROR_VIDEO_GENERATION_TIMED_OUT` | `provider_transient` | `none` | `same_request_later` |
 
-旧项目运行时通过 `VEO3AccountUtil` 的 `ThreadLocal` 把当前账号传给 `GoogleAIService`。异步上传 Flow 参考图时也会在子线程重新设置同一个账号。
+## 6. Provider 健康口径
 
-## 3. 并发与队列
+`provider_health_failure=false` 的情况不代表 Flow 平台不可用：
 
-Google Flow 生图：
+- 本地配置错误。
+- 参数错误。
+- 内容安全/合规拦截。
+- 当前 profile 限流。
 
-- `FlowImageTaskConsumer` 默认配置项：`model-master.ai-image.flow.reqLimit:9`
-- 实际并发还受 `GoogleImageAccountManager.getReqLimit()` 限制，即 `可用账号数 * 每账号 reqLimit`
-- 账号池无可用额度时会等待；如果池为空会尝试 `addNewAccount(1)`
+`provider_health_failure=true` 适合记录为运行可用性问题：
 
-Google VEO 视频：
+- token/cookie/session 失效且无法刷新。
+- 验证码/风控门禁持续失败。
+- 平台 5xx、高负载或生成超时。
+- 未知错误，直到分类表补齐。
 
-- `VEO3TaskConsumer` 默认配置项：`model-master.ai-video.veo3.reqLimit:9`
-- 线程数优先读 `mmPermission.system.googleAccount.video.threadNum`，兜底 `6`
-- 轮询队列 sleep 时间读 `mmPermission.system.googleAccount.video.cycleTime`，兜底 `2000ms`
-- 实际并发同样受 `GoogleVideoAccountManager.getReqLimit()` 限制
+## 7. 资源下载
 
-## 4. Recaptcha 策略
+本 skill 默认保留 Google 原始响应；传 `--output-dir` 时会下载产物到本地：
 
-旧项目每次生成前动态取 recaptcha，不复用长期 token。完整服务抽象、Capsolver 请求和反馈逻辑见 `references/recaptcha-provider.md`。
+- Flow 图片优先下载 `media[].image.generatedImage.fifeUrl`，否则保存 `encodedImage`。
+- VEO 视频下载 `operation.metadata.video.fifeUrl`。
+- 下载失败应保留完整响应，方便后续用原始 URL 或 operation name 追查。
 
-固定参数：
-
-| 字段 | 值 |
-| --- | --- |
-| websiteURL | `https://labs.google/` |
-| websiteKey | `6LdsFiUsAAAAAIjVDZcuLhaHiDn5nnHVXVRQGeMV` |
-| websiteTitle | `Flow - ModelMaster` |
-| 图片 pageAction | `IMAGE_GENERATION` |
-| 视频 pageAction | `VIDEO_GENERATION` |
-| provider task type | 实际发送 `ReCaptchaV3TaskProxyLess` |
-| DTO type | `reCaptchaV3` |
-
-结果使用：
-
-- `recaptchaValue` -> `clientContext.recaptchaContext.token`
-- `userAgent` -> 透传到请求 header `user-agent`
-- 成功后调用 `feedbackTask(..., true)`
-- 遇到 403 类错误后调用 `feedbackTask(..., false)`
-- 每次结束都会 `ReCaptchaTaskIdUtil.clear()`
-
-Capsolver 轮询策略：
-
-| 项 | 值 |
-| --- | --- |
-| createTask | `POST https://api.capsolver.com/createTask` |
-| getTaskResult | `POST https://api.capsolver.com/getTaskResult` |
-| feedbackTask | `POST https://api.capsolver.com/feedbackTask` |
-| 最大轮询 | 6 次 |
-| 轮询间隔 | 4000ms |
-| 成功 token | `solution.gRecaptchaResponse` |
-
-可选预解 token 池：
-
-- Redis key：`google_captcha_v3_token`
-- 保存入口：`POST /api/ops/google/captcha/v3/save?token=...`
-- TTL：120 秒
-- 读取策略：先删除过期 token，再弹出最早过期 token
-- 注意：旧项目已有 `OpsService.getGoogleCaptchaToken()`，但没有接入 `GoogleAIService.getReCaptcha()`；如果要使用，需要作为扩展接入。
-
-## 5. 错误到账号状态映射
-
-旧项目在 consumer 层根据失败 reason 更新账号状态：
-
-| reason | 账号状态 |
-| --- | --- |
-| `PUBLIC_ERROR_USER_REQUESTS_THROTTLED` | `REQUEST_HIGH` |
-| `TOKEN_EXPIRED` | `TOKEN_EXPIRED` |
-| `COOKIE_EXPIRED` | `DEAD` |
-
-`GoogleAccountManager.finish()` 行为：
-
-- `REQUEST_HIGH`：同账号累计 4 次后移出可用池，并把数据库状态更新为 `request_high`。
-- `TOKEN_EXPIRED` / `DEAD`：移出可用池，并把数据库状态更新为 `dead`。
-- 结束时一定会把当前账号 `reqCount` 减 1。
-
-注意：源码里有 `coldDownAccountCache` 和 `startColdDown()`，但当前 manager 初始化路径没有明显调用 `startColdDown()`；实际是否启用冷却需要结合运行配置或后续代码再确认。
-
-## 6. Google API 错误解析
-
-`GoogleAIClient.executeHttpRequest()` 成功条件：
-
-- HTTP status 必须为 `200`
-- `HttpResponse.isSuccess()` 必须为 true
-
-失败解析：
-
-- HTTP `401`：
-  - Authorization token 请求 -> `TOKEN_EXPIRED`
-  - Cookie 请求 -> `COOKIE_EXPIRED`
-- 非 401：
-  - 优先读取 `error.details[0].reason`
-  - 没有 reason 时使用通用错误消息
-
-因为 `executeHttpRequest()` 的最后 catch 会返回 `null`，上层必须检查空响应。旧项目在 Flow 生图、图片上传、视频状态查询里都做了空响应校验。
-
-## 7. 生成重试策略
-
-Google Flow 生图和 Google VEO 提交都使用相同的 403 类重试策略：
-
-| 条件 | 行为 |
-| --- | --- |
-| reason 以 `403` 结尾 | 反馈 recaptcha 失败，重试 |
-| reason 为 `PUBLIC_ERROR_SOMETHING_WENT_WRONG` | 反馈 recaptcha 失败，重试 |
-| reason 为 `PUBLIC_ERROR_UNUSUAL_ACTIVITY` | 反馈 recaptcha 失败，重试 |
-| 重试次数达到 3 | 抛出错误 |
-| 其他错误 | 不重试，直接抛出 |
-
-VEO 视频提交后轮询：
-
-- 每 10 秒查询一次 `batchCheckAsyncVideoGenerationStatus`
-- 查询接口异常最多重试 3 次
-- `MEDIA_GENERATION_STATUS_SUCCESSFUL` 成功
-- `MEDIA_GENERATION_STATUS_FAILED` 或非 pending/active/successful 状态视为失败
-
-## 8. 资源下载和保存
-
-旧项目生成后不会直接把 Google URL 返回给用户，而是下载并上传到 OSS：
-
-- Flow 图片：下载 `media[].image.generatedImage.fifeUrl`，失败最多重试 3 次。
-- VEO 视频：下载 `operation.metadata.video.fifeUrl`。
-- VEO 封面：下载 `operation.metadata.video.servingBaseUri`。
-
-如果只需要快速验证调用，可以保留 Google 原始 URL；如果要交付可用产物，需要记录下载是否成功。
-
-## 9. 高可用检查清单
+## 8. 高可用检查清单
 
 生成或复现调用前，至少检查：
 
-- `google_ai_token` 是否可用，失败时是否返回 `TOKEN_EXPIRED`。
-- `google_ai_cookie` 是否可用，Labs/TRPC 失败时是否返回 `COOKIE_EXPIRED`。
-- `project_id` 是否存在且和当前 token/cookie 属于同一账号。
-- recaptcha token 是否带正确 pageAction：图片用 `IMAGE_GENERATION`，视频用 `VIDEO_GENERATION`。
-- recaptcha 返回的 userAgent 是否同步透传。
-- 账号是否需要 `is_fast`，因为它会改变 VEO model key。
-- 图片上传返回的是 Flow `media.name` 还是 VEO `mediaGenerationId.mediaGenerationId`，两者不能混用。
+- `project_id` 是否和当前 token/cookie 属于同一 Flow 项目。
+- `google_ai_token` 是否临近过期，必要时先跑 `check_labs_session.py`。
+- `google_ai_cookie` 是否可用，刷新 token 后是否合并了新的 `Set-Cookie`。
+- recaptcha `pageAction` 是否正确。
+- recaptcha `userAgent` 是否透传。
+- VEO fast profile 是否需要 `is_fast` model key 兼容。
+- Flow 图片上传返回的 `media.name` 和 VEO 上传返回的 `mediaGenerationId` 没有混用。
+- batch 是否超过 4 条，是否混用了不同图片模型。
 - 轮询 operation name 是否来自同一次提交响应。
-- 失败响应里的 reason 是否写入调用记录。

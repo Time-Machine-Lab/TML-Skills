@@ -1,8 +1,10 @@
 secrets/accounts.local.json
 secrets/*.local.json
+secrets/*.local.txt
 secrets/*.env
 secrets/.env
 sessions/*.local.*
+sessions/*.local-output/
 sessions/*.har
 sessions/*.json
 sessions/*.txt

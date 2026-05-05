@@ -149,7 +149,7 @@ class CapsolverCaptchaProvider(CaptchaProvider):
     def _post(self, path: str, payload: Dict[str, Any]) -> Dict[str, Any]:
         result = _json_post(
             self.base_url + path,
-            {"User-Agent": "ModelMaster-CapsolverClient/1.0", "Content-Type": "application/json"},
+            {"User-Agent": "FlowPlatformSkill-CaptchaClient/1.0", "Content-Type": "application/json"},
             payload,
         )
         if result.get("errorId") not in (None, 0):

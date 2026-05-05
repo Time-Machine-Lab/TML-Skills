@@ -21,39 +21,78 @@
   - `Authorization: <Google token>`
   - `Accept: application/json`
   - `Content-Type: application/json`
-  - `User-Agent: ModelMaster-GoogleAIClient/1.0`
+  - `User-Agent: <browser/captcha user agent>`；没有 solver userAgent 时脚本使用自己的默认 UA
 - Labs/TRPC Header：
   - `Cookie: <Google Labs cookie>`
   - 其他 JSON header 同上
-- 旧项目来源：`other_account` 转成 `GoogleAccountManager.VEO3Account`，核心字段是 `token`、`cookie`、`extraData.projectId`。
+- 本 skill 的 profile 字段：`google_ai_token`、`google_ai_cookie`、`project_id`、`is_fast`。
 
-Google Flow 生图和直接 Google VEO 生成都需要 recaptcha v3。旧项目用 Capsolver 获取：
+Google Flow 生图和直接 Google VEO 生成都需要 recaptcha v3。当前已知固定参数：
 
 - website URL：`https://labs.google/`
 - website key：`6LdsFiUsAAAAAIjVDZcuLhaHiDn5nnHVXVRQGeMV`
 - 视频 page action：`VIDEO_GENERATION`
 - 图片 page action：`IMAGE_GENERATION`
-- website title：`Flow - ModelMaster`
+- website title 可不传；部分旧 DTO 会构造标题但 Capsolver 实现没有真正发送。
 
-### 账号池和 projectId
+### Profile 和 projectId
 
-旧项目不是在接口调用处直接传账号，而是在 worker 启动时从账号池取出 Google 账号，再通过 `VEO3AccountUtil` 的 `ThreadLocal` 暴露给 `GoogleAIService`。
-
-账号字段来自 `other_account`：
+本 skill 在本地 profile 中直接保存调用所需字段：
 
 ```text
-token     -> GoogleAIClient.Authorization
-cookie    -> GoogleAIClient.Cookie
-extraData.projectId -> GoogleAIClient.projectId / clientContext.projectId
-extraData.isFast    -> VEO fast modelKey 是否切换
-type      -> 视频账号类型预留检查
+google_ai_token  -> aisandbox Authorization
+google_ai_cookie -> Labs Cookie
+project_id       -> Google Flow projectId / clientContext.projectId
+is_fast          -> VEO fast modelKey 兼容开关
 ```
 
-图片账号池读取配置 `mmPermission.system.googleAccount.image`，视频账号池读取配置 `mmPermission.system.googleAccount.video`。图片默认每账号并发 3，视频默认每账号并发 1。
+### 过期、限流和风控判断
+
+当前没有单独的“封禁检测”接口，主要根据接口错误和 session 检查推断恢复动作：
+
+- HTTP `401` 或 `TOKEN_EXPIRED`：刷新 access token。
+- `COOKIE_EXPIRED`：重新登录或替换 Labs cookie。
+- `PUBLIC_ERROR_USER_REQUESTS_THROTTLED`、HTTP `429`、`RESOURCE_EXHAUSTED`、quota/rate limit：当前 profile 暂停提交，切换 profile 或冷却。
+- HTTP `403`、`PUBLIC_ERROR_SOMETHING_WENT_WRONG`、`PUBLIC_ERROR_UNUSUAL_ACTIVITY`：按验证码/风控门禁处理，feedback captcha false 后重新取 token 重试。
+- 非 `401` 错误优先读取 Google 错误体 `error.details[0].reason`。
+
+脚本用 `FlowPlatformError.classification()` 输出 `category/profile_action/retry_scope/recovery_action`，不维护业务账号状态。
 
 ## Labs 项目创建
 
 项目创建走 Labs TRPC，不是 aisandbox Authorization。
+新登录账号如果没有 Flow 工作区，必须先创建项目拿到 `projectId`，再调用图片或视频生成接口。`projectId` 后续同时用于 aisandbox URL 和 `clientContext.projectId`。
+
+### Labs session / access token
+
+Endpoint：
+
+```text
+GET https://labs.google/fx/api/auth/session
+```
+
+用途：
+
+- 用浏览器态 Labs cookie 获取当前 NextAuth session。
+- 响应 JSON 中的 `access_token` 是 aisandbox API 的 OAuth token，写入请求头时使用 `Authorization: Bearer <access_token>`。
+- 响应 JSON 中的 `expires` 是 access token 过期时间；这和响应 `Set-Cookie` 里的 `__Secure-next-auth.session-token` 过期时间不是同一个概念。
+- 响应可能返回新的 `Set-Cookie`，应合并回本地 `google_ai_cookie`，避免 session-token 轮换后旧 Cookie 失效。
+
+建议请求头：
+
+```text
+Accept: application/json
+Content-Type: application/json
+Cookie: <google_ai_cookie>
+Referer: https://labs.google/fx/tools/flow/project/<projectId>
+User-Agent: <browser user agent>
+```
+
+本 skill 使用：
+
+```bash
+python3 scripts/check_labs_session.py --account-profile <profile> --update-account --update-cookie
+```
 
 Endpoint：
 
@@ -67,7 +106,7 @@ Header：
 Cookie: <google_ai_cookie>
 Content-Type: application/json
 Accept: application/json
-User-Agent: ModelMaster-GoogleAIClient/1.0
+User-Agent: <browser or skill user agent>
 ```
 
 请求体外层要包 `json`：
@@ -90,6 +129,17 @@ result.data.json.result.projectInfo.projectTitle
 ```
 
 旧项目 `Veo3ProjectCreateReq(String projectTitle)` 默认 `toolName = "PINHOLE"`。
+
+本 skill 使用：
+
+```bash
+python3 scripts/create_labs_project.py \
+  --account-profile <profile> \
+  --update-account \
+  --update-cookie
+```
+
+脚本成功后把 `projectId` 写回 profile 的 `project_id`。如果响应有 `Set-Cookie`，`--update-cookie` 会合并新的 `__Secure-next-auth.session-token`，避免浏览器态 cookie 轮换后本地仍使用旧值。
 
 ## Google Flow 生图
 
@@ -182,9 +232,21 @@ POST https://aisandbox-pa.googleapis.com/v1/projects/{projectId}/flowMedia:batch
 图片比例映射：
 
 - `16:9` -> `IMAGE_ASPECT_RATIO_LANDSCAPE`
+- `4:3` -> `IMAGE_ASPECT_RATIO_LANDSCAPE_FOUR_THREE`
 - `9:16` -> `IMAGE_ASPECT_RATIO_PORTRAIT`
+- `3:4` -> `IMAGE_ASPECT_RATIO_PORTRAIT_THREE_FOUR`
 - `1:1` -> `IMAGE_ASPECT_RATIO_SQUARE`
 - 默认 -> `IMAGE_ASPECT_RATIO_LANDSCAPE`
+
+实测响应尺寸：
+
+- `16:9` -> `1376x768`
+- `4:3` -> `1200x896`
+- `1:1` -> `1024x1024`
+- `3:4` -> `896x1200`
+- `9:16` -> `768x1376`
+
+`flowMedia:batchGenerateImages` 的 `requests[]` 支持同一模型下多个 prompt / seed / aspectRatio；不支持同一个 batch 混不同 `imageModelName`，例如 `NARWHAL` 与 `GEM_PIX_2` 混合会返回 HTTP 400 `INVALID_ARGUMENT`。本 skill 将单次 batch 上限控制为 4 条，与 Flow UI 的 x1-x4 一致。
 
 响应里旧项目使用：
 
@@ -263,6 +325,8 @@ POST https://aisandbox-pa.googleapis.com/v1:uploadUserImage
 - 首尾帧视频：`/v1/video:batchAsyncGenerateVideoStartAndEndImage`
 - 参考图视频：`/v1/video:batchAsyncGenerateVideoReferenceImages`
 
+本 skill 只把 VEO 作为单任务生成能力暴露：虽然底层接口名是 `batchAsync...`，公开脚本每次只提交一个 `requests[]`。多个视频由外层循环多次调用，避免不同 prompt、比例、首尾帧和验证码重试被同一个 batch 绑定。实测同 batch 混合 `16:9` 与 `9:16` 可能被服务端统一成同一比例/model key，不适合作为默认高可用路径。
+
 产品入口路径：
 
 | 产品能力 | Controller path | 旧项目 worker |
@@ -311,6 +375,20 @@ POST https://aisandbox-pa.googleapis.com/v1:uploadUserImage
       ]
     }
   ]
+}
+```
+
+时长说明：Flow UI 暴露 4s / 6s / 8s 选项，但当前 direct VEO 请求体不发送时长字段。`durationSeconds` 已实测会被 Google 返回 `INVALID_ARGUMENT`，不要写入 `requests[]`。
+
+浏览器新请求还会携带：
+
+```json
+{
+  "mediaGenerationContext": {
+    "batchId": "uuid",
+    "audioFailurePreference": "BLOCK_SILENCED_VIDEOS"
+  },
+  "useV2ModelConfig": true
 }
 ```
 
@@ -385,6 +463,9 @@ POST https://aisandbox-pa.googleapis.com/v1/video:batchCheckAsyncVideoGeneration
 | `veo3.1-pro` | 文生视频 | `veo_3_1_t2v` | `veo_3_1_t2v_portrait` |
 | `veo3.1-pro` | 图生视频 | `veo_3_1_i2v_s` | `veo_3_1_i2v_s_portrait` |
 | `veo3.1-pro` | 首尾帧 | `veo_3_1_i2v_s_fl` | `veo_3_1_i2v_s_portrait_fl` |
+| `veo3.1-quality` | 文生视频 | `veo_3_1_t2v` | `veo_3_1_t2v_portrait` |
+| `veo3.1-quality` | 图生视频 | `veo_3_1_i2v_s` | `veo_3_1_i2v_s_portrait` |
+| `veo3.1-quality` | 首尾帧 | `veo_3_1_i2v_s_fl` | `veo_3_1_i2v_s_portrait_fl` |
 
 旧项目还有一个账号加速逻辑：如果 Google 账号 `isFast = true`，部分 relaxed fast key 会被替换成不带 `_relaxed` 的 fast key。
 
@@ -447,12 +528,6 @@ operations[].status         -> 初始状态
   - Cookie 请求 -> `COOKIE_EXPIRED`
   - Authorization token 请求 -> `TOKEN_EXPIRED`
 - 其他错误优先解析 `error.details[0].reason` 并抛出这个 reason。
-
-Flow 生图账号状态映射：
-
-- `PUBLIC_ERROR_USER_REQUESTS_THROTTLED` -> `REQUEST_HIGH`
-- `TOKEN_EXPIRED` -> `TOKEN_EXPIRED`
-- `COOKIE_EXPIRED` -> `DEAD`
 
 Google 生成重试策略：
 

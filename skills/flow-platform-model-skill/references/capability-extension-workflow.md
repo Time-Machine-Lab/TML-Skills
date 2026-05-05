@@ -11,7 +11,7 @@
 - 平台内部模型名：真正发给接口的 model key / model name。
 - 生成能力：文生图、图生图、文生视频、图生视频、首尾帧、参考图、轮询、上传、下载。
 - 认证/session：token、cookie、projectId、workspaceId、sessionId、captcha、userAgent。
-- 运行策略：账号池、限流、冷却、验证码刷新、错误重试、资源下载。
+- 运行策略：profile 轮换、限流、冷却、验证码刷新、错误重试、资源下载。
 
 当前已内置的 provider：
 

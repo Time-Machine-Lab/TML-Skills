@@ -1,4 +1,4 @@
 interface:
   display_name: "Flow Platform Model Skill"
-  short_description: "Generate images and videos through Flow platform models."
-  default_prompt: "Use this skill to generate images or videos through Flow platform models, handling account config, captcha, uploads, polling, downloads, and errors."
+  short_description: "Generate Flow images and VEO videos with project setup, captcha, polling, and downloads."
+  default_prompt: "使用 Flow 平台生成图片或视频。图片默认用 Nano-Banana-2，视频默认用 VEO 3.1 Quality 单任务提交；自动处理工作区创建、账号、验证码、参考图上传、轮询、下载和错误重试。"

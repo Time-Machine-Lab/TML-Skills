@@ -1,50 +1,17 @@
 # Google Flow Recaptcha 服务抽象
 
-本文件只记录 Google Flow / aisandbox 调用前的一次性 recaptcha v3 token 获取逻辑。旧项目的核心实现来自：
+本文件只记录 Google Flow / aisandbox 调用前的一次性 recaptcha v3 token 获取逻辑。当前 skill 只依赖验证码 provider 接口，不依赖任何业务数据库或账号系统。
 
-- `/Users/mac/Code/ModelMaster/model-master-app/src/main/java/io/github/timemachinelab/service/GoogleAIService.java`
-- `/Users/mac/Code/ModelMaster/model-master-app/src/main/java/io/github/timemachinelab/service/ReCaptchaService.java`
-- `/Users/mac/Code/ModelMaster/model-master-app/src/main/java/io/github/timemachinelab/service/recaptcha/CapsolverRecaptchaServiceImpl.java`
-- `/Users/mac/Code/ModelMaster/model-master-app/src/main/java/io/github/timemachinelab/client/GoogleReCaptchaCapsolverClient.java`
-- `/Users/mac/Code/ModelMaster/model-master-app/src/main/java/io/github/timemachinelab/service/OpsService.java`
+## 0. Provider 配置来源
 
-## 0. ModelMaster 配置来源
+验证码平台密钥只放在本地忽略文件或环境变量：
 
-Google Flow 的验证码服务 key 不在 `application-*.yml` 的 `captcha:` 段里；那个段落只用于站内邮件/图片验证码。
-
-旧项目的 Google recaptcha provider 来源是数据库 `other_account` 表：
-
-| 项 | 位置 |
-| --- | --- |
-| 数据库连接密文 | `model-master-app/src/main/resources/application-dev.yml` 的 `spring.datasource` |
-| Jasypt 解密参数 | `model-master-app/src/main/resources/you-cant-see-that.yml` |
-| Capsolver key 读取入口 | `ClientConfig.googleReCaptchaCapsolverClient()` |
-| provider 平台名 | `ReCaptchaCapsolver` |
-| key 字段 | `other_account.token` |
-
-数据库里可能同时存在两条验证码平台记录：
-
-| `platform` | 对应代码 | 当前 Google Flow 是否使用 |
-| --- | --- | --- |
-| `ReCaptcha` | `GoogleReCaptchaClient`，base URL 是 `https://api.ez-captcha.com` | 否。`GoogleAIService` 里虽然注入了 `googleReCaptchaClient`，但当前生成链路没有调用它。 |
-| `ReCaptchaCapsolver` | `GoogleReCaptchaCapsolverClient`，base URL 是 `https://api.capsolver.com` | 是。`GoogleAIService.getReCaptcha()` 通过 `capsolverRecaptchaServiceImpl.getRecaptchaToken(...)` 获取 token，feedback 也走同一个实现。 |
-
-`EzCaptchaReCaptchaServiceImpl` 当前只是空壳实现，`getRecaptchaToken()` 返回空对象，`feedbackTask()` 返回 `false`，不能作为当前可用实现。
-
-迁移到本 skill 时，只把 `other_account.token` 写入被忽略的 `secrets/captcha.local.json` 的 `client_key`；不要把数据库连接、Jasypt 主密码或一次性 recaptcha token 写入 skill 文档。
-
-已验证的本地迁移查询逻辑：
-
-```sql
-SELECT id, status, token
-FROM other_account
-WHERE platform = 'ReCaptchaCapsolver'
-  AND (delete_flag = 0 OR delete_flag IS NULL)
-  AND token IS NOT NULL
-  AND token <> ''
-ORDER BY CASE WHEN status = 'available' THEN 0 ELSE 1 END, id DESC
-LIMIT 1;
+```text
+secrets/captcha.local.json
+CAPSOLVER_CLIENT_KEY
 ```
+
+当前可用 provider 是 `capsolver`。后续切换到其他验证码平台时，只新增 `CaptchaProvider` 实现，生成脚本仍只调用 `solve()` 和 `feedback()`。
 
 ## 1. Google Flow 固定参数
 
@@ -52,13 +19,13 @@ LIMIT 1;
 | --- | --- | --- |
 | `websiteURL` | `https://labs.google/` | Google Flow 页面 |
 | `websiteKey` | `6LdsFiUsAAAAAIjVDZcuLhaHiDn5nnHVXVRQGeMV` | Google Flow recaptcha key |
-| `websiteTitle` | `Flow - ModelMaster` | 旧 DTO 会构造，但 Capsolver 实现没有真正传出 |
+| `websiteTitle` | 可不传 | Capsolver 当前实现不需要 |
 | 图片 `pageAction` | `IMAGE_GENERATION` | Flow 生图前使用 |
 | 视频 `pageAction` | `VIDEO_GENERATION` | VEO 视频提交前使用 |
 | Google 请求写入字段 | `clientContext.recaptchaContext.token` | 图片和视频一致 |
 | Google 请求 `applicationType` | `RECAPTCHA_APPLICATION_TYPE_WEB` | 固定 |
 
-注意：旧 `GoogleAIService` 里有 `RE_CAPTCHA_V3_TASK_TYPE = "ReCaptchaV3EnterpriseTaskProxyless"` 常量，但实际 `CapsolverRecaptchaServiceImpl` 创建任务时硬编码的是 `ReCaptchaV3TaskProxyLess`。生成调用应以实际发送值为准。
+注意：当前实测可用的 Capsolver task type 是 `ReCaptchaV3TaskProxyLess`。
 
 ## 2. 服务抽象
 
